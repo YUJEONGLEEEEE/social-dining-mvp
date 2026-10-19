@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+/* Design tokens from 05_디자인.md (D1). Light theme only. */
+:root {
+  color-scheme: light;
+  --ink: #202020;
+  --paper: #ffffff;
+  --mist: #f3f3f3;
+  --line: #e6e6e6;
+  --honey: #ffdb5b;
+  --pollen: #fff386;
+  --graphite: #575656;
+  --charcoal: #3b3b3b;
+  --danger: #c2412b;
+  --danger-soft: #fbe4df;
+}
+
+@theme inline {
+  --color-ink: var(--ink);
+  --color-paper: var(--paper);
+  --color-mist: var(--mist);
+  --color-line: var(--line);
+  --color-honey: var(--honey);
+  --color-pollen: var(--pollen);
+  --color-graphite: var(--graphite);
+  --color-charcoal: var(--charcoal);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --font-sans: Pretendard, -apple-system, sans-serif;
+  --radius-btn: 16px;
+  --radius-card: 24px;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
