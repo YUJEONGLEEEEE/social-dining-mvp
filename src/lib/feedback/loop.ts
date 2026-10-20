@@ -150,6 +150,10 @@ export async function openNextWeek(sandboxId: string, weekOf: string) {
     slotId = created.id;
   }
 
+  // A new week means fresh restaurant inventory (Hongdae keeps its demo limit of one table per venue).
+  await db.from("venues").update({ tables_available: 3 }).eq("sandbox_id", sandboxId).neq("region", "hongdae");
+  await db.from("venues").update({ tables_available: 1 }).eq("sandbox_id", sandboxId).eq("region", "hongdae");
+
   const { data: seated } = await db
     .from("table_members")
     .select("profile_id, dining_tables!inner(event_slots!inner(event_date))")

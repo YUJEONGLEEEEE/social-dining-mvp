@@ -2,10 +2,13 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createDemoSandbox } from "@/lib/demo/sandbox";
 import { STAGES, advanceDemo, type Stage } from "@/lib/demo/clock";
+import { resolveFailedMatch, type ResolveChoice } from "@/lib/participant/resolve";
+import { submitFeedback, type PersonChoice } from "@/lib/feedback/loop";
 import { PERSONA_COOKIE, getDemoSession, requireDemoSession, type Persona } from "@/lib/auth/session";
 import { BUDGETS, INTERESTS, MBTI_TYPES, PERSONALITY, WANTS } from "@/lib/profile-options";
 
@@ -30,6 +33,7 @@ export async function resetDemo() {
   await createAdminClient().from("sandboxes").delete().eq("id", session.sandboxId).eq("owner_user_id", session.userId);
   await createDemoSandbox(session.userId, { displayName: "나", gender: "female" });
   (await cookies()).delete(PERSONA_COOKIE);
+  revalidatePath("/", "layout");
   redirect("/app/onboarding");
 }
 
@@ -37,6 +41,7 @@ export async function switchPersona(formData: FormData) {
   await requireDemoSession();
   const persona: Persona = formData.get("persona") === "fail" ? "fail" : "me";
   (await cookies()).set(PERSONA_COOKIE, persona, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/" });
+  revalidatePath("/", "layout");
   redirect("/app");
 }
 
@@ -121,6 +126,8 @@ export async function advanceDemoAction(formData: FormData) {
   const from = String(formData.get("from") ?? "");
   if (!(STAGES as readonly string[]).includes(from)) redirect("/app");
   await advanceDemo(session.sandboxId, session.userId, from as Stage, session.isAnonymous ? "demo-visitor" : "test-account");
+  // The demo bar lives in the layout, which a same-URL redirect would otherwise keep stale.
+  revalidatePath("/", "layout");
   // Only same-app paths, so the field cannot be used as an open redirect.
   const back = String(formData.get("back") ?? "");
   redirect(/^\/(app|admin)(\/[\w-]+)*$/.test(back) ? back : "/app");
@@ -153,4 +160,64 @@ export async function confirmAttendance(formData: FormData) {
   await db.from("applications").update({ attendance_status: "confirmed" }).eq("id", seat.application_id).eq("attendance_status", "none");
   await db.from("audit_logs").insert({ sandbox_id: session.sandboxId, entity: "application", entity_id: seat.application_id, actor: "participant", action: "confirm_attendance" });
   redirect(`/app/table/${tableId}`);
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Failed match: move to another date, keep the pass, or refund (STA-04~06, PAY-03). */
+export async function resolveFailedMatchAction(formData: FormData) {
+  const session = await requireDemoSession();
+  const applicationId = String(formData.get("applicationId") ?? "");
+  const choice = String(formData.get("choice") ?? "");
+  const slotId = String(formData.get("slotId") ?? "") || null;
+  if (!UUID.test(applicationId) || !["move", "keep", "refund"].includes(choice)) redirect("/app");
+  if (slotId && !UUID.test(slotId)) redirect(`/app/resolve/${applicationId}`);
+  await resolveFailedMatch(session.sandboxId, session.profileId, applicationId, choice as ResolveChoice, slotId);
+  revalidatePath("/", "layout");
+  redirect(`/app/resolve/${applicationId}`);
+}
+
+export type FeedbackState = { error?: string };
+
+/** Feedback after the meal, plus an optional safety report (FDB-01~04, SAF-01). */
+export async function submitFeedbackAction(_: FeedbackState, formData: FormData): Promise<FeedbackState> {
+  const session = await requireDemoSession();
+  const tableId = String(formData.get("tableId") ?? "");
+  if (!UUID.test(tableId)) return { error: "잘못된 요청이에요." };
+  const rating = Number(formData.get("rating"));
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) return { error: "오늘 식탁 만족도를 골라 주세요." };
+  const comment = String(formData.get("comment") ?? "").slice(0, 1000);
+
+  const db = createAdminClient();
+  const { data: seat } = await db.from("table_members").select("application_id")
+    .eq("sandbox_id", session.sandboxId).eq("table_id", tableId).eq("profile_id", session.profileId).is("left_at", null).maybeSingle();
+  if (!seat) return { error: "이 식탁의 참가자만 피드백을 남길 수 있어요." };
+
+  const choices: PersonChoice[] = [];
+  for (const [key, value] of formData.entries()) {
+    if (!key.startsWith("person:")) continue;
+    const target = key.slice("person:".length);
+    if (UUID.test(target) && (value === "again" || value === "neutral" || value === "never")) choices.push({ targetProfileId: target, choice: value });
+  }
+  try {
+    await submitFeedback(session.sandboxId, seat.application_id, { rating, comment, choices }, "participant");
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "저장하지 못했어요." };
+  }
+
+  const reported = String(formData.get("report") ?? "");
+  const reason = String(formData.get("reportReason") ?? "").trim().slice(0, 500);
+  if (UUID.test(reported) && choices.some((c) => c.targetProfileId === reported)) {
+    // A report blocks the pair for good and goes to the operator's exception inbox.
+    await db.from("user_relations").upsert(
+      { sandbox_id: session.sandboxId, profile_id: session.profileId, other_profile_id: reported, kind: "blocked", source: "report" },
+      { onConflict: "profile_id,other_profile_id,kind", ignoreDuplicates: true },
+    );
+    await db.from("exception_cases").insert({
+      sandbox_id: session.sandboxId, type: "safety_report", title: "참가자 신고 접수", table_id: tableId,
+      detail: { reporter: session.profileId, reported, reason: reason || "사유 미입력" },
+    });
+  }
+  revalidatePath("/", "layout");
+  redirect("/app");
 }
