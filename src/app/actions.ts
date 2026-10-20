@@ -125,3 +125,32 @@ export async function advanceDemoAction(formData: FormData) {
   const back = String(formData.get("back") ?? "");
   redirect(/^\/(app|admin)(\/[\w-]+)*$/.test(back) ? back : "/app");
 }
+
+/** Group chat message from the current persona. Only members of the table may post. */
+export async function sendChatMessage(formData: FormData) {
+  const session = await requireDemoSession();
+  const tableId = String(formData.get("tableId") ?? "");
+  const body = String(formData.get("body") ?? "").trim();
+  if (!/^[0-9a-f-]{36}$/.test(tableId)) redirect("/app");
+  if (body.length < 1 || body.length > 500) redirect(`/app/table/${tableId}`);
+  const db = createAdminClient();
+  const { data: seat } = await db.from("table_members").select("id")
+    .eq("sandbox_id", session.sandboxId).eq("table_id", tableId).eq("profile_id", session.profileId).is("left_at", null).maybeSingle();
+  if (!seat) redirect("/app");
+  await db.from("chat_messages").insert({ sandbox_id: session.sandboxId, table_id: tableId, sender_profile_id: session.profileId, kind: "user", body });
+  redirect(`/app/table/${tableId}`);
+}
+
+/** D-1 "참석할게요" (attendance confirmed), recorded on the participant's own application. */
+export async function confirmAttendance(formData: FormData) {
+  const session = await requireDemoSession();
+  const tableId = String(formData.get("tableId") ?? "");
+  if (!/^[0-9a-f-]{36}$/.test(tableId)) redirect("/app");
+  const db = createAdminClient();
+  const { data: seat } = await db.from("table_members").select("application_id")
+    .eq("sandbox_id", session.sandboxId).eq("table_id", tableId).eq("profile_id", session.profileId).is("left_at", null).maybeSingle();
+  if (!seat) redirect("/app");
+  await db.from("applications").update({ attendance_status: "confirmed" }).eq("id", seat.application_id).eq("attendance_status", "none");
+  await db.from("audit_logs").insert({ sandbox_id: session.sandboxId, entity: "application", entity_id: seat.application_id, actor: "participant", action: "confirm_attendance" });
+  redirect(`/app/table/${tableId}`);
+}

@@ -28,7 +28,11 @@ async function postChat(db: Db, sandboxId: string, rows: ChatNotice[]) {
   if (!rows.length) return 0;
   const { data: posted } = await db.from("chat_messages").select("dedupe_key").eq("sandbox_id", sandboxId).in("dedupe_key", rows.map((r) => r.dedupe_key));
   const already = new Set((posted ?? []).map((r) => r.dedupe_key));
-  const fresh = rows.filter((r) => !already.has(r.dedupe_key)).map((r) => ({ ...r, sandbox_id: sandboxId }));
+  // Messages in one batch get increasing timestamps so the chat shows them in order.
+  const now = Date.now();
+  const fresh = rows
+    .filter((r) => !already.has(r.dedupe_key))
+    .map((r, i) => ({ ...r, sandbox_id: sandboxId, created_at: new Date(now + i).toISOString() }));
   if (!fresh.length) return 0;
   const { error } = await db.from("chat_messages").insert(fresh);
   if (error && error.code !== "23505") throw new Error(error.message);
