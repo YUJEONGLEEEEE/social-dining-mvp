@@ -155,12 +155,14 @@ export async function runMatching(sandboxId: string, weekOf: string, actor: stri
         .in("id", confirmedIds.filter((id) => !moved.has(id)));
       if (error) throw error;
     }
-    for (const id of moved) {
-      await db.from("applications").update({ match_status: "confirmed", match_note: "다른 후보 일정으로 재배치됐어요." }).eq("id", id);
+    if (moved.size) {
+      await db.from("applications").update({ match_status: "confirmed", match_note: "다른 후보 일정으로 재배치됐어요." }).in("id", [...moved]);
     }
-    for (const u of result.unmatched) {
-      await db.from("applications").update({ match_status: "failed", match_note: u.reason }).eq("id", u.candidate.applicationId);
-    }
+    // One update per distinct reason instead of one per person (fewer round trips).
+    const byReason = new Map<string, string[]>();
+    for (const u of result.unmatched) byReason.set(u.reason, [...(byReason.get(u.reason) ?? []), u.candidate.applicationId]);
+    await Promise.all([...byReason].map(([reason, ids]) =>
+      db.from("applications").update({ match_status: "failed", match_note: reason }).in("id", ids)));
 
     // Membership holders get +7 days for each failed match (operating policy).
     const failedIds = result.unmatched.map((u) => u.candidate.applicationId);

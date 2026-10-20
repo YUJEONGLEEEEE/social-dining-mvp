@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+// Demo steps run matching and messaging in one server action; allow up to 60s.
+export const maxDuration = 60;
+
 export const metadata: Metadata = {
   title: "우연한 식탁",
   description: "매주 목요일 저녁, 처음 보는 사람들과 좋은 저녁 한 끼",

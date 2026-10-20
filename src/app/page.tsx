@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { startDemo } from "./actions";
-import { Button } from "@/components/ui";
+import { SubmitButton } from "@/components/submit-button";
 import { LoginForm } from "./login-form";
 
 export default async function Landing({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
@@ -16,7 +16,7 @@ export default async function Landing({ searchParams }: { searchParams: Promise<
       </p>
 
       <form action={startDemo} className="mt-8">
-        <Button type="submit">데모 시작하기</Button>
+        <SubmitButton pendingLabel="나만의 데모 회차를 만드는 중…" className="inline-flex h-[52px] w-full items-center justify-center rounded-btn bg-ink px-5 text-base font-semibold text-paper">데모 시작하기</SubmitButton>
       </form>
       {error === "start" && (
         <p role="alert" className="mt-3 text-[15px] text-danger">데모를 시작하지 못했어요. 잠시 후 다시 시도해 주세요.</p>
