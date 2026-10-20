@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "../supabase/server.ts";
 import { createAdminClient } from "../supabase/admin.ts";
+import type { Stage } from "../demo/clock.ts";
 
 export type Persona = "me" | "fail";
 export const PERSONA_COOKIE = "wt_persona";
@@ -17,6 +18,7 @@ export type DemoSession = {
   meProfileId: string;
   failProfileId: string | null;
   demoClock: string | null;
+  stage: Stage;
 };
 
 /**
@@ -33,7 +35,7 @@ export async function getDemoSession(): Promise<DemoSession | null> {
   const db = createAdminClient();
   const { data: sandbox } = await db
     .from("sandboxes")
-    .select("id, me_profile_id, fail_profile_id, demo_clock")
+    .select("id, me_profile_id, fail_profile_id, demo_clock, demo_stage")
     .eq("owner_user_id", user.id)
     .eq("kind", "demo")
     .order("created_at", { ascending: false })
@@ -53,6 +55,7 @@ export async function getDemoSession(): Promise<DemoSession | null> {
     meProfileId: sandbox.me_profile_id,
     failProfileId: sandbox.fail_profile_id,
     demoClock: sandbox.demo_clock,
+    stage: sandbox.demo_stage as Stage,
   };
 }
 

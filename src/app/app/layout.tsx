@@ -1,27 +1,43 @@
 import Link from "next/link";
 import { requireDemoSession } from "@/lib/auth/session";
-import { resetDemo, switchPersona } from "../actions";
+import { NEXT_STEP } from "@/lib/demo/clock";
+import { dateTimeLabel } from "@/lib/format";
+import { advanceDemoAction, resetDemo, switchPersona } from "../actions";
+import { TabBar } from "./tab-bar";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await requireDemoSession();
+  const next = NEXT_STEP[session.stage];
   return (
     <div className="flex flex-1 flex-col items-center bg-mist">
-      <div className="w-full max-w-[430px] border-b border-line bg-paper px-4 py-2 text-[13px]">
+      <div className="sticky top-0 z-20 w-full max-w-[430px] bg-ink px-4 py-2.5 text-[13px] text-paper">
         <div className="flex items-center justify-between gap-2">
-          <span className="font-bold">데모 · {session.persona === "fail" ? "매칭 실패 참가자 시점" : "내 시점"}</span>
-          <div className="flex items-center gap-3">
-            <form action={switchPersona}>
-              <input type="hidden" name="persona" value={session.persona === "fail" ? "me" : "fail"} />
-              <button className="underline underline-offset-2">{session.persona === "fail" ? "내 시점으로" : "실패 참가자 보기"}</button>
+          <span>
+            <span className="font-bold">가상 시계</span> {session.demoClock ? dateTimeLabel(session.demoClock) : ""}
+          </span>
+          {next ? (
+            <form action={advanceDemoAction}>
+              <input type="hidden" name="from" value={session.stage} />
+              <button className="rounded-full bg-honey px-3 py-1.5 font-bold text-ink">{next.label} →</button>
             </form>
-            <Link href="/admin" className="underline underline-offset-2">운영자</Link>
-            <form action={resetDemo}>
-              <button className="underline underline-offset-2">처음부터</button>
-            </form>
-          </div>
+          ) : (
+            <span className="text-paper/70">데모 끝</span>
+          )}
+        </div>
+        <div className="mt-1.5 flex items-center gap-3 text-paper/80">
+          <span>{session.persona === "fail" ? "매칭 실패 참가자 시점" : "내 시점"}</span>
+          <form action={switchPersona}>
+            <input type="hidden" name="persona" value={session.persona === "fail" ? "me" : "fail"} />
+            <button className="underline underline-offset-2">{session.persona === "fail" ? "내 시점으로" : "실패 참가자 보기"}</button>
+          </form>
+          <Link href="/admin" className="underline underline-offset-2">운영자 화면</Link>
+          <form action={resetDemo} className="ml-auto">
+            <button className="underline underline-offset-2">처음부터</button>
+          </form>
         </div>
       </div>
-      <div className="flex w-full max-w-[430px] flex-1 flex-col bg-paper">{children}</div>
+      <div className="flex w-full max-w-[430px] flex-1 flex-col bg-paper pb-[84px]">{children}</div>
+      <TabBar />
     </div>
   );
 }
