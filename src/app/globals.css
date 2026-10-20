@@ -29,10 +29,16 @@
   --font-sans: Pretendard, -apple-system, sans-serif;
   --radius-btn: 16px;
   --radius-card: 24px;
+  --radius-sm: 9px;
 }
 
 body {
   background: var(--paper);
   color: var(--ink);
   font-family: var(--font-sans);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
 }
