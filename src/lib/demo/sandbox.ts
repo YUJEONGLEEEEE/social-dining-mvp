@@ -100,6 +100,7 @@ export async function createDemoSandbox(ownerUserId: string, me: { displayName: 
     },
   );
   await check(db.from("profiles").insert(profiles));
+  await check(db.from("sandboxes").update({ me_profile_id: meId, fail_profile_id: failId }).eq("id", sid));
 
   const relations = await check(
     db.from("user_relations").select("profile_id, other_profile_id, kind, source").in("profile_id", sourceIds).in("other_profile_id", sourceIds),
