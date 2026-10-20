@@ -9,6 +9,7 @@ import { createDemoSandbox } from "@/lib/demo/sandbox";
 import { STAGES, advanceDemo, type Stage } from "@/lib/demo/clock";
 import { resolveFailedMatch, type ResolveChoice } from "@/lib/participant/resolve";
 import { submitFeedback, type PersonChoice } from "@/lib/feedback/loop";
+import { resolveVenueShortage } from "@/lib/automation/meetup";
 import { PERSONA_COOKIE, getDemoSession, requireDemoSession, type Persona } from "@/lib/auth/session";
 import { BUDGETS, INTERESTS, MBTI_TYPES, PERSONALITY, WANTS } from "@/lib/profile-options";
 
@@ -220,4 +221,31 @@ export async function submitFeedbackAction(_: FeedbackState, formData: FormData)
   }
   revalidatePath("/", "layout");
   redirect("/app");
+}
+
+/** Operator: assign a substitute venue to a venue-shortage case. */
+export async function resolveVenueShortageAction(formData: FormData) {
+  const session = await requireDemoSession();
+  const exceptionId = String(formData.get("exceptionId") ?? "");
+  const venueId = String(formData.get("venueId") ?? "");
+  if (!UUID.test(exceptionId) || !UUID.test(venueId)) redirect("/admin");
+  await resolveVenueShortage(session.sandboxId, exceptionId, venueId, "operator");
+  revalidatePath("/", "layout");
+  redirect("/admin");
+}
+
+/** Operator: close a safety report after review (the pair stays blocked). */
+export async function closeExceptionAction(formData: FormData) {
+  const session = await requireDemoSession();
+  const exceptionId = String(formData.get("exceptionId") ?? "");
+  const note = String(formData.get("note") ?? "").trim().slice(0, 300) || "운영자 확인 완료";
+  if (!UUID.test(exceptionId)) redirect("/admin");
+  const db = createAdminClient();
+  const { data: ex } = await db.from("exception_cases").select("id, status").eq("sandbox_id", session.sandboxId).eq("id", exceptionId).maybeSingle();
+  if (ex?.status === "open") {
+    await db.from("exception_cases").update({ status: "resolved", resolution: note, resolved_at: new Date().toISOString() }).eq("id", ex.id);
+    await db.from("audit_logs").insert({ sandbox_id: session.sandboxId, entity: "exception_case", entity_id: ex.id, actor: "operator", action: "close_exception", before: { status: "open" }, after: { status: "resolved" }, reason: note });
+  }
+  revalidatePath("/", "layout");
+  redirect("/admin");
 }
