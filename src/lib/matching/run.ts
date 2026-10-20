@@ -1,5 +1,6 @@
 import "server-only";
 import { createAdminClient } from "../supabase/admin.ts";
+import { assignVenues, notifyFailures } from "../automation/meetup.ts";
 import { DEFAULT_RULES, matchWeek, pairKey, type Applicant, type Candidate, type Relations, type Rules } from "./engine.ts";
 
 type Db = ReturnType<typeof createAdminClient>;
@@ -197,6 +198,9 @@ export async function runMatching(sandboxId: string, weekOf: string, actor: stri
       after: summary,
       reason: `${weekOf} 회차 자동 매칭`,
     });
+    // Hand off to the meetup automation: venues, group chat notices, failure notices.
+    await assignVenues(sandboxId, run.id, actor);
+    await notifyFailures(sandboxId, weekOf);
     return { ...summary, runId: run.id, reused: false };
   } catch (error) {
     await db.from("match_runs").update({ status: "failed", finished_at: new Date().toISOString() }).eq("id", run.id);

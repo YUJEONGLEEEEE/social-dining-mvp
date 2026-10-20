@@ -18,7 +18,7 @@ function kst(date: string, hour: number) {
 async function check<T>(promise: PromiseLike<{ data: T; error: { message: string } | null }>) {
   const { data, error } = await promise;
   if (error) throw new Error(error.message);
-  if (data === null) throw new Error("No data returned");
+  // Inserts without .select() return null data; callers that read rows always select.
   return data as NonNullable<T>;
 }
 
