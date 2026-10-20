@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SubmitButton } from "@/components/submit-button";
 import { requireDemoSession } from "@/lib/auth/session";
 import { NEXT_STEP } from "@/lib/demo/clock";
 import { dateTimeLabel } from "@/lib/format";
@@ -18,7 +19,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {next ? (
             <form action={advanceDemoAction}>
               <input type="hidden" name="from" value={session.stage} />
-              <button className="rounded-full bg-honey px-3 py-1.5 font-bold text-ink">{next.label} →</button>
+              <SubmitButton pendingLabel="자동 처리 중…" className="rounded-full bg-honey px-3 py-1.5 font-bold text-ink">{next.label} →</SubmitButton>
             </form>
           ) : (
             <span className="text-paper/70">데모 끝</span>

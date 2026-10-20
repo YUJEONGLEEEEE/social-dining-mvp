@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SubmitButton } from "@/components/submit-button";
 import { requireDemoSession } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { NEXT_STEP } from "@/lib/demo/clock";
@@ -23,7 +24,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <form action={advanceDemoAction}>
               <input type="hidden" name="from" value={session.stage} />
               <input type="hidden" name="back" value="/admin" />
-              <button className="rounded-full bg-honey px-3 py-1.5 font-bold text-ink">{next.label} →</button>
+              <SubmitButton pendingLabel="자동 처리 중…" className="rounded-full bg-honey px-3 py-1.5 font-bold text-ink">{next.label} →</SubmitButton>
             </form>
           )}
           <Link href="/app" className="underline underline-offset-2">참가자 앱으로</Link>
