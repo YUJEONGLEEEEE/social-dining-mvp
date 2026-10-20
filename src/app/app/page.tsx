@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireDemoSession } from "@/lib/auth/session";
 import { getJourney } from "@/lib/participant/journey";
+import { compareFeedbackEffect } from "@/lib/feedback/loop";
 import { REGION_LABEL } from "@/lib/profile-options";
 import { dateLabel, dateTimeLabel, durationLabel, timeLabel } from "@/lib/format";
 import { Badge } from "@/components/ui";
@@ -16,6 +17,9 @@ export default async function AppHome() {
   const name = journey.profile?.display_name ?? "";
   const status = application?.match_status;
   const slot = slots[0];
+  const effect = session.stage === "next_matched" && session.persona === "me" && status === "confirmed"
+    ? await compareFeedbackEffect(session.sandboxId, "2026-10-29", session.profileId)
+    : null;
 
   return (
     <main className="px-5 pt-4">
@@ -96,6 +100,8 @@ export default async function AppHome() {
         </>
       )}
 
+      {effect && <FeedbackEffect effect={effect} />}
+
       <section className="mt-4 rounded-card bg-mist p-5 text-[15px] leading-relaxed">
         <h2 className="font-bold">환불·취소 규정</h2>
         <p className="mt-1 text-graphite">화요일 24시(매칭 마감) 전까지 전액 환불. 이후와 당일 취소는 환불되지 않아요. 노쇼 2회가 쌓이면 4주간 신청이 제한돼요.</p>
@@ -122,8 +128,44 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+const RELATION: Record<string, string> = {
+  never: "다시 안 만날래요",
+  mutual_again: "서로 또 만나요",
+  met: "지난주 만남",
+  new: "처음",
+};
+
+function FeedbackEffect({ effect }: { effect: Awaited<ReturnType<typeof compareFeedbackEffect>> }) {
+  const column = (title: string, side: typeof effect.before) => (
+    <div className="rounded-btn bg-paper p-3.5">
+      <p className="text-[13px] font-bold text-graphite">{title}</p>
+      <ul className="mt-2 space-y-1 text-[14px]">
+        {side.members.map((m) => (
+          <li key={m.name} className="flex justify-between gap-2">
+            <span>{m.name}</span>
+            <span className={m.relation === "never" ? "font-bold text-danger" : m.relation === "mutual_again" ? "font-bold" : "text-graphite"}>{RELATION[m.relation]}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+  return (
+    <section className="mt-4 rounded-card bg-mist p-5">
+      <h2 className="text-[17px] font-bold">피드백이 다음 매칭에 반영됐어요</h2>
+      <p className="mt-1 text-[14px] leading-relaxed text-graphite">
+        같은 신청자로 매칭을 두 번 돌려 비교했어요. &lsquo;다시 안 만날래요&rsquo;는 같은 테이블이 될 수 없고, 서로 &lsquo;또 만나요&rsquo;는 가산점, 지난주에 만난 사람은 새로운 사람 점수에서 감점돼요.
+      </p>
+      <div className="mt-3 space-y-2">
+        {column("피드백 반영 전", effect.before)}
+        {column("반영 후 (실제 결과)", effect.after)}
+      </div>
+    </section>
+  );
+}
+
 function StageAction({ stage, tableId, feedbackDone }: { stage: string; tableId: string; feedbackDone: boolean }) {
   const button = "mt-5 flex h-[52px] items-center justify-center rounded-btn bg-ink font-semibold text-paper";
+  if (stage === "finished" && feedbackDone) return <p className="mt-5 rounded-btn bg-paper p-4 text-[15px] font-bold">피드백을 보냈어요. 위의 데모 바로 다음 회차 매칭을 실행해 보세요.</p>;
   if (stage === "finished" && !feedbackDone) return <Link href={`/app/feedback/${tableId}`} className={button}>오늘 식탁 피드백 남기기</Link>;
   if (stage === "dining") return <Link href={`/app/table/${tableId}`} className={button}>대화 카드 보기</Link>;
   return <Link href={`/app/table/${tableId}`} className={button}>단체방 열기</Link>;

@@ -1,0 +1,70 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { requireDemoSession } from "@/lib/auth/session";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { alternativeSlots } from "@/lib/participant/resolve";
+import { REGION_LABEL } from "@/lib/profile-options";
+import { dateTimeLabel } from "@/lib/format";
+import { Badge } from "@/components/ui";
+import { Icon } from "@/components/icons";
+import { resolveFailedMatchAction } from "../../../actions";
+
+const RESULT: Record<string, string> = {
+  moved_slot: "다음 주 목요일 일정으로 옮겼어요. 결제는 그대로 이어지고, 마감 시각에 다시 자동 매칭돼요.",
+  kept_pass: "이용권 1회로 보관했어요. 원하는 날 다시 신청할 수 있어요.",
+  refunded: "9,900원을 원래 결제 수단으로 환불했어요. (모의 환불)",
+  membership_extended: "멤버십 이용 기한이 7일 늘어났어요.",
+};
+
+export default async function Resolve({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const session = await requireDemoSession();
+  if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
+  const db = createAdminClient();
+  const { data: app } = await db.from("applications").select("id, match_status, match_note")
+    .eq("sandbox_id", session.sandboxId).eq("id", id).eq("profile_id", session.profileId).maybeSingle();
+  if (!app) notFound();
+  const { data: resolutions } = await db.from("match_resolutions").select("kind").eq("application_id", id).order("created_at");
+  const slots = app.match_status === "failed" ? await alternativeSlots(session.sandboxId) : [];
+
+  return (
+    <main className="flex flex-1 flex-col px-5 pt-4">
+      <Link href="/app" aria-label="홈으로" className="py-2"><Icon name="arrowLeft" /></Link>
+      <Badge tone="plain"><Icon name="calendarX" size={14} />이번 회차 매칭 안 됨</Badge>
+      <h1 className="mt-2.5 text-[24px] font-extrabold leading-snug tracking-[-0.03em]">이번 목요일엔 딱 맞는 식탁을 찾지 못했어요</h1>
+      <p className="mt-2 text-[15px] leading-relaxed">{app.match_note}</p>
+      <p className="mt-3 flex items-start gap-2 rounded-btn bg-mist p-3.5 text-[15px] leading-relaxed">
+        <Icon name="shield" size={20} className="mt-0.5 shrink-0" />결제는 그대로 보관돼 있어요. 운영자 확인 없이 바로 처리돼요.
+      </p>
+
+      {app.match_status === "failed" ? (
+        <form action={resolveFailedMatchAction} className="mt-6 flex flex-1 flex-col">
+          <input type="hidden" name="applicationId" value={app.id} />
+          <h2 className="text-[15px] font-bold">이런 일정은 어때요?</h2>
+          <div className="mt-2.5 space-y-2">
+            {slots.map((s, i) => (
+              <label key={s.id} className="flex min-h-[62px] cursor-pointer items-center justify-between rounded-btn bg-mist px-4 has-[:checked]:bg-paper has-[:checked]:ring-2 has-[:checked]:ring-ink">
+                <span className="text-[15px]">
+                  <span className="font-bold">{dateTimeLabel(s.starts_at)} · {REGION_LABEL[s.region]}</span>
+                  <span className="block text-[14px] text-graphite">자리 여유 있음 · 마감 {dateTimeLabel(s.match_deadline_at)}</span>
+                </span>
+                <input type="radio" name="slotId" value={s.id} defaultChecked={i === 0} className="size-5 accent-ink" />
+              </label>
+            ))}
+          </div>
+          <div className="mt-auto space-y-2 py-5">
+            <button name="choice" value="move" className="h-[52px] w-full rounded-btn bg-ink font-semibold text-paper">이 일정으로 옮기기</button>
+            <button name="choice" value="keep" className="h-[52px] w-full rounded-btn border-[1.5px] border-ink font-semibold">이용권으로 보관하기</button>
+            <button name="choice" value="refund" className="h-11 w-full font-medium text-graphite underline underline-offset-4">환불받기</button>
+          </div>
+        </form>
+      ) : (
+        <section className="mt-6 rounded-card bg-pollen p-5">
+          <h2 className="flex items-center gap-1.5 text-[16px] font-bold"><Icon name="check" size={18} />처리했어요</h2>
+          {resolutions?.map((r, i) => <p key={i} className="mt-1.5 text-[15px] leading-relaxed">{RESULT[r.kind]}</p>)}
+          <Link href="/app" className="mt-4 flex h-[52px] items-center justify-center rounded-btn bg-ink font-semibold text-paper">홈으로</Link>
+        </section>
+      )}
+    </main>
+  );
+}
