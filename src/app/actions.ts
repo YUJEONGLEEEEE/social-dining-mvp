@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createDemoSandbox } from "@/lib/demo/sandbox";
+import { STAGES, advanceDemo, type Stage } from "@/lib/demo/clock";
 import { PERSONA_COOKIE, getDemoSession, requireDemoSession, type Persona } from "@/lib/auth/session";
 import { BUDGETS, INTERESTS, MBTI_TYPES, PERSONALITY, WANTS } from "@/lib/profile-options";
 
@@ -112,4 +113,15 @@ export async function signInTestAccount(_: LoginState, formData: FormData): Prom
     store.delete(PERSONA_COOKIE);
   }
   redirect(data.user.app_metadata?.role === "operator" ? "/admin" : "/app");
+}
+
+/** Demo bar: move the virtual clock one step forward. */
+export async function advanceDemoAction(formData: FormData) {
+  const session = await requireDemoSession();
+  const from = String(formData.get("from") ?? "");
+  if (!(STAGES as readonly string[]).includes(from)) redirect("/app");
+  await advanceDemo(session.sandboxId, session.userId, from as Stage, session.isAnonymous ? "demo-visitor" : "test-account");
+  // Only same-app paths, so the field cannot be used as an open redirect.
+  const back = String(formData.get("back") ?? "");
+  redirect(/^\/(app|admin)(\/[\w-]+)*$/.test(back) ? back : "/app");
 }
