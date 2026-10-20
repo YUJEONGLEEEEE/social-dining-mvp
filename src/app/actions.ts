@@ -249,3 +249,30 @@ export async function closeExceptionAction(formData: FormData) {
   revalidatePath("/", "layout");
   redirect("/admin");
 }
+
+export type RulesState = { error?: string; saved?: boolean };
+
+/** Operator: preference weights and minimum score (MAT-15). Applies from the next matching run. */
+export async function saveMatchingRules(_: RulesState, formData: FormData): Promise<RulesState> {
+  const session = await requireDemoSession();
+  const keys = ["weight_gender", "weight_mbti", "weight_interests", "weight_wants", "weight_new_people"] as const;
+  const values: Record<string, number> = {};
+  for (const key of keys) {
+    const v = Number(formData.get(key));
+    if (!Number.isFinite(v) || v < 0 || v > 50) return { error: "가중치는 0~50 사이 숫자로 입력해 주세요." };
+    values[key] = v;
+  }
+  if (Object.values(values).every((v) => v === 0)) return { error: "가중치를 하나 이상 0보다 크게 입력해 주세요." };
+  const minScore = Number(formData.get("min_score"));
+  if (!Number.isFinite(minScore) || minScore < 0 || minScore > 100) return { error: "최소 점수는 0~100 사이로 입력해 주세요." };
+
+  const db = createAdminClient();
+  const { data: before } = await db.from("matching_rules").select("*").eq("sandbox_id", session.sandboxId).single();
+  await db.from("matching_rules").update({ ...values, min_score: minScore, updated_at: new Date().toISOString() }).eq("sandbox_id", session.sandboxId);
+  await db.from("audit_logs").insert({
+    sandbox_id: session.sandboxId, entity: "matching_rules", actor: "operator", action: "update_rules",
+    before, after: { ...values, min_score: minScore }, reason: "운영자 가중치 조정",
+  });
+  revalidatePath("/admin/rules");
+  return { saved: true };
+}
