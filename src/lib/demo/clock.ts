@@ -40,7 +40,10 @@ export async function advanceDemo(sandboxId: string, ownerUserId: string, from: 
   if (!to) return;
 
   if (from === "applied") await runMatching(sandboxId, DEMO_WEEK, actor);
-  if (from === "matched") await sendReminders(sandboxId, DEMO_WEEK);
+  if (from === "matched") {
+    await sendReminders(sandboxId, DEMO_WEEK);
+    await addVirtualChatter(sandboxId);
+  }
   if (from === "reminded") {
     await postConversationCards(sandboxId, DEMO_WEEK);
     await db.from("applications").update({ attendance_status: "checked_in", checked_in_at: STAGE_CLOCK.dining })
@@ -60,4 +63,32 @@ export async function advanceDemo(sandboxId: string, ownerUserId: string, from: 
     sandbox_id: sandboxId, entity: "sandbox", entity_id: sandboxId, actor, action: "advance_demo_clock",
     before: { stage: from }, after: { stage: to, clock: STAGE_CLOCK[to] },
   });
+}
+
+const CHATTER = [
+  "안녕하세요! 목요일에 뵐게요. 다들 이 근처 자주 오세요?",
+  "반가워요 :) 저는 퇴근하고 바로 갈 것 같아요. 조금 늦으면 먼저 시작해 주세요!",
+];
+
+/** Demo only: two virtual tablemates say hello in each group chat, so the room is not empty. */
+async function addVirtualChatter(sandboxId: string) {
+  const db = createAdminClient();
+  const { data: tables } = await db
+    .from("dining_tables")
+    .select("id, table_members(profile_id, profiles(is_virtual))")
+    .eq("sandbox_id", sandboxId)
+    .eq("status", "confirmed");
+  for (const t of tables ?? []) {
+    const virtual = (t.table_members as unknown as { profile_id: string; profiles: { is_virtual: boolean } }[])
+      .filter((m) => m.profiles.is_virtual)
+      .slice(0, CHATTER.length);
+    const rows = virtual.map((m, i) => ({
+      sandbox_id: sandboxId, table_id: t.id, sender_profile_id: m.profile_id, kind: "user", body: CHATTER[i],
+      dedupe_key: `table:${t.id}:chatter:${i}`,
+    }));
+    // The dedupe index is partial, which upsert cannot target, so skip keys that already exist.
+    const { data: existing } = await db.from("chat_messages").select("dedupe_key").eq("table_id", t.id).like("dedupe_key", "%:chatter:%");
+    const fresh = rows.filter((r) => !(existing ?? []).some((e) => e.dedupe_key === r.dedupe_key));
+    if (fresh.length) await db.from("chat_messages").insert(fresh);
+  }
 }
