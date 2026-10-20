@@ -86,3 +86,30 @@ export async function saveProfile(_: ProfileFormState, formData: FormData): Prom
   if (error) return { error: "저장하지 못했어요. 잠시 후 다시 시도해 주세요." };
   redirect("/app");
 }
+
+export type LoginState = { error?: string };
+
+/** Test-account login (PRD ACC-01 allows test accounts for the hackathon). */
+export async function signInTestAccount(_: LoginState, formData: FormData): Promise<LoginState> {
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const password = String(formData.get("password") ?? "");
+  if (!email || !password || email.length > 100 || password.length > 100) return { error: "이메일과 비밀번호를 입력해 주세요." };
+
+  const supabase = await createClient();
+  await supabase.auth.signOut();
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  // Same message for every failure, so the form does not reveal which accounts exist.
+  if (error || !data.user) return { error: "이메일 또는 비밀번호가 맞지 않아요." };
+
+  const db = createAdminClient();
+  const { data: sandbox } = await db.from("sandboxes").select("id").eq("owner_user_id", data.user.id).limit(1).maybeSingle();
+  if (!sandbox) await createDemoSandbox(data.user.id, { displayName: "나", gender: "female" });
+
+  const store = await cookies();
+  if (data.user.app_metadata?.persona === "fail") {
+    store.set(PERSONA_COOKIE, "fail", { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/" });
+  } else {
+    store.delete(PERSONA_COOKIE);
+  }
+  redirect(data.user.app_metadata?.role === "operator" ? "/admin" : "/app");
+}

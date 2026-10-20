@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { startDemo } from "./actions";
 import { Button } from "@/components/ui";
+import { LoginForm } from "./login-form";
 
 export default async function Landing({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
@@ -23,6 +24,12 @@ export default async function Landing({ searchParams }: { searchParams: Promise<
       <p className="mt-3 text-[15px] text-graphite">
         누르면 나만의 데모 회차(10/22 목, 홍대·강남, 가상 참가자 23명)가 만들어져요. 다른 사람의 데모와 섞이지 않아요.
       </p>
+
+      <section className="mt-10">
+        <h2 className="text-[17px] font-bold">테스트 계정</h2>
+        <p className="mt-1 text-[15px] text-graphite">참가자 / 매칭 실패 참가자 / 운영자 계정은 제출 안내에 적어 두었어요.</p>
+        <LoginForm />
+      </section>
 
       <section className="mt-10 rounded-card bg-mist p-5">
         <h2 className="text-[17px] font-bold">3분 데모 순서</h2>
