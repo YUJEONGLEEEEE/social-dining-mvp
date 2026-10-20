@@ -3,7 +3,7 @@
 // Hard constraints (a table that breaks one is never confirmed):
 //   same slot, 4-6 people, age gap <= rules.maxAgeGap, no blocked/disliked pair.
 // Preference score (0-100): gender balance, MBTI, shared interests,
-//   wanted personality, new people. Pairs who both chose "again" last time add a bonus.
+//   wanted personality, new people. Pairs who both chose "again" last time add a bonus (+5 each, up to +10).
 
 export type Gender = "female" | "male";
 
@@ -167,8 +167,10 @@ function pairs(members: Candidate[]) {
 
 export function scoreTable(members: Candidate[], relations: Relations, rules: Rules) {
   const all = pairs(members);
-  const metPairs = all.filter(([a, b]) => relations.met.has(pairKey(a.profileId, b.profileId))).length;
-  const mutualPairs = all.filter(([a, b]) => relations.mutualAgain.has(pairKey(a.profileId, b.profileId))).length;
+  const mutual = (a: Candidate, b: Candidate) => relations.mutualAgain.has(pairKey(a.profileId, b.profileId));
+  // A pair who both asked to meet again is not counted against "new people".
+  const metPairs = all.filter(([a, b]) => relations.met.has(pairKey(a.profileId, b.profileId)) && !mutual(a, b)).length;
+  const mutualPairs = all.filter(([a, b]) => mutual(a, b)).length;
 
   const breakdown: Breakdown = {
     gender: genderScore(members),
@@ -176,7 +178,7 @@ export function scoreTable(members: Candidate[], relations: Relations, rules: Ru
     interests: interestScore(members),
     wants: wantsScore(members),
     newPeople: all.length ? 1 - metPairs / all.length : 1,
-    mutualBonus: Math.min(6, mutualPairs * 3),
+    mutualBonus: Math.min(10, mutualPairs * 5),
   };
   const weights = rules.weightGender + rules.weightMbti + rules.weightInterests + rules.weightWants + rules.weightNewPeople;
   const weighted =
@@ -185,8 +187,9 @@ export function scoreTable(members: Candidate[], relations: Relations, rules: Ru
     breakdown.interests * rules.weightInterests +
     breakdown.wants * rules.weightWants +
     breakdown.newPeople * rules.weightNewPeople;
-  const score = Math.min(100, (weights ? (weighted / weights) * 100 : 0) + breakdown.mutualBonus);
-  return { score: Math.round(score * 10) / 10, breakdown };
+  // The optimizer uses the uncapped value so the reunion bonus still counts at the top end.
+  const raw = (weights ? (weighted / weights) * 100 : 0) + breakdown.mutualBonus;
+  return { score: Math.round(Math.min(100, raw) * 10) / 10, raw, breakdown };
 }
 
 /** Number of hard-constraint violations (0 means the table may be confirmed). */
@@ -223,6 +226,11 @@ export function explainTable(members: Candidate[], relations: Relations) {
     sentences.push(`${who} '${top.interest}'에 관심이 있어요.`);
   }
 
+  const mutual = pairs(members).filter(([a, b]) => relations.mutualAgain.has(pairKey(a.profileId, b.profileId))).length;
+  const met = pairs(members).filter(([a, b]) => relations.met.has(pairKey(a.profileId, b.profileId))).length;
+  if (mutual > 0) sentences.push("지난번 서로 '또 만나요'를 고른 분들이 다시 만나요.");
+  else if (met === 0) sentences.push("모두 처음 만나는 사이예요.");
+
   // The most shared wish at this table, so each table reads differently.
   const wishes = new Map<string, number>();
   for (const m of members) for (const w of m.wants) if (WANT_PHRASE[w]) wishes.set(w, (wishes.get(w) ?? 0) + 1);
@@ -231,11 +239,6 @@ export function explainTable(members: Candidate[], relations: Relations) {
 
   const ei = new Set(members.map((m) => m.mbti?.[0]).filter(Boolean));
   if (ei.size > 1) sentences.push("이야기를 이끄는 분과 잘 들어주는 분이 고루 섞였어요.");
-
-  const mutual = pairs(members).filter(([a, b]) => relations.mutualAgain.has(pairKey(a.profileId, b.profileId))).length;
-  const met = pairs(members).filter(([a, b]) => relations.met.has(pairKey(a.profileId, b.profileId))).length;
-  if (mutual > 0) sentences.push("지난번 서로 '또 만나요'를 고른 분들이 다시 만나요.");
-  else if (met === 0) sentences.push("모두 처음 만나는 사이예요.");
 
   const years = members.map((m) => m.birthYear);
   const nowYear = 2026;
@@ -267,7 +270,7 @@ function objective(groups: Candidate[][], relations: Relations, rules: Rules) {
   let total = 0;
   for (const g of groups) {
     if (g.length === 0) continue;
-    total += scoreTable(g, relations, rules).score - 1000 * violations(g, relations, rules);
+    total += scoreTable(g, relations, rules).raw - 1000 * violations(g, relations, rules);
   }
   return total;
 }
@@ -288,42 +291,54 @@ export function groupSlot(candidates: Candidate[], relations: Relations, rules: 
   }
   const leftover = sorted.slice(start);
 
+  // Best-improvement local search: each round applies the single swap or move
+  // that raises the objective most. Taking the first improvement instead can trade
+  // a forbidden pair for an age violation and get stuck there.
   let best = objective(groups, relations, rules);
-  for (let round = 0; round < 30; round++) {
-    let improved = false;
+  for (let round = 0; round < 200; round++) {
+    let bestMove: (() => void) | null = null;
+    let bestValue = best;
     for (let a = 0; a < groups.length; a++) {
-      for (let b = a + 1; b < groups.length; b++) {
-        for (let i = 0; i < groups[a].length; i++) {
-          for (let j = 0; j < groups[b].length; j++) {
-            [groups[a][i], groups[b][j]] = [groups[b][j], groups[a][i]];
-            const value = objective(groups, relations, rules);
-            if (value > best + 1e-9) {
-              best = value;
-              improved = true;
-            } else {
+      for (let b = 0; b < groups.length; b++) {
+        if (a === b) continue;
+        if (a < b) {
+          for (let i = 0; i < groups[a].length; i++) {
+            for (let j = 0; j < groups[b].length; j++) {
               [groups[a][i], groups[b][j]] = [groups[b][j], groups[a][i]];
+              const value = objective(groups, relations, rules);
+              [groups[a][i], groups[b][j]] = [groups[b][j], groups[a][i]];
+              if (value > bestValue + 1e-9) {
+                bestValue = value;
+                const [ga, gb, ii, jj] = [a, b, i, j];
+                bestMove = () => {
+                  [groups[ga][ii], groups[gb][jj]] = [groups[gb][jj], groups[ga][ii]];
+                };
+              }
             }
           }
         }
         // Moves keep sizes inside 4-6.
-        for (const [from, to] of [[a, b], [b, a]]) {
-          if (groups[from].length <= MIN_SIZE || groups[to].length >= MAX_SIZE) continue;
-          for (let i = 0; i < groups[from].length; i++) {
-            const [moved] = groups[from].splice(i, 1);
-            groups[to].push(moved);
-            const value = objective(groups, relations, rules);
-            if (value > best + 1e-9) {
-              best = value;
-              improved = true;
-              break;
-            }
-            groups[to].pop();
-            groups[from].splice(i, 0, moved);
+        if (groups[a].length <= MIN_SIZE || groups[b].length >= MAX_SIZE) continue;
+        for (let i = 0; i < groups[a].length; i++) {
+          const [moved] = groups[a].splice(i, 1);
+          groups[b].push(moved);
+          const value = objective(groups, relations, rules);
+          groups[b].pop();
+          groups[a].splice(i, 0, moved);
+          if (value > bestValue + 1e-9) {
+            bestValue = value;
+            const [from, to, ii] = [a, b, i];
+            bestMove = () => {
+              const [m] = groups[from].splice(ii, 1);
+              groups[to].push(m);
+            };
           }
         }
       }
     }
-    if (!improved) break;
+    if (!bestMove) break;
+    bestMove();
+    best = bestValue;
   }
   return { groups, leftover };
 }
