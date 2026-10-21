@@ -31,10 +31,13 @@ export async function alternativeSlots(sandboxId: string, demoClock: string) {
   return data ?? [];
 }
 
-/** What is left to refund for this application's pass: paid minus already refunded. */
+/** What is left to refund for a single pass: paid minus already refunded. A membership is extended instead (FAQ). */
 export async function refundableAmount(sandboxId: string, passId: string | null) {
   if (!passId) return 0;
-  const { data } = await createAdminClient().from("payments").select("kind, amount").eq("sandbox_id", sandboxId).eq("pass_id", passId);
+  const db = createAdminClient();
+  const { data: pass } = await db.from("passes").select("kind").eq("id", passId).maybeSingle();
+  if (pass?.kind !== "single") return 0;
+  const { data } = await db.from("payments").select("kind, amount").eq("sandbox_id", sandboxId).eq("pass_id", passId);
   return Math.max(0, (data ?? []).reduce((sum, p) => sum + (p.kind === "pay" ? p.amount : -p.amount), 0));
 }
 
@@ -78,12 +81,16 @@ export async function resolveFailedMatch(sandboxId: string, profileId: string, d
     notice = "다른 목요일 일정으로 옮겼어요. 결제는 그대로 이어져요.";
   } else if (choice === "keep") {
     if (!(await claim(db, app.id, { match_status: "resolved", payment_status: "pass_kept" }))) return { already: true };
-    if (app.pass_id) {
-      const { data: pass } = await db.from("passes").select("remaining_count").eq("id", app.pass_id).single();
-      if (pass && pass.remaining_count !== null) await db.from("passes").update({ remaining_count: pass.remaining_count + 1 }).eq("id", app.pass_id);
-    }
+    const { data: pass } = app.pass_id ? await db.from("passes").select("kind, remaining_count").eq("id", app.pass_id).single() : { data: null };
     kind = "kept_pass";
-    notice = "이용권 1회로 보관했어요. 원하는 날 다시 신청할 수 있어요.";
+    if (pass && pass.kind !== "single") {
+      // Matching already added 7 days to the membership; there is no count to keep.
+      detail = { membership: true };
+      notice = "멤버십은 그대로 유지돼요. 기간 안에 원하는 날 다시 신청할 수 있어요.";
+    } else {
+      if (pass) await db.from("passes").update({ remaining_count: (pass.remaining_count ?? 0) + 1 }).eq("id", app.pass_id!);
+      notice = "이용권 1회로 보관했어요. 원하는 날 다시 신청할 수 있어요.";
+    }
   } else {
     // Mock refund to the original payment method, no account details or approval needed.
     const amount = await refundableAmount(sandboxId, app.pass_id);

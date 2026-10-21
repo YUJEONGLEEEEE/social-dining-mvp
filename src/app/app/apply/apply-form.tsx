@@ -7,7 +7,7 @@ import { Button } from "@/components/ui";
 type Slot = { id: string; title: string; deadline: string };
 type Plan = { kind: string; name: string; price: number; note: string };
 
-export function ApplyForm({ slots, plans, kept }: { slots: Slot[]; plans: Plan[]; kept: boolean }) {
+export function ApplyForm({ slots, plans, kept }: { slots: Slot[]; plans: Plan[]; kept: "single" | "membership" | null }) {
   const [state, action, pending] = useActionState<ApplyState, FormData>(applyAction, {});
   const [kind, setKind] = useState(plans[0].kind);
   const price = plans.find((p) => p.kind === kind)!.price;
@@ -39,7 +39,9 @@ export function ApplyForm({ slots, plans, kept }: { slots: Slot[]; plans: Plan[]
         <section>
           <h2 className="text-[15px] font-bold">2. 이용권</h2>
           <input type="hidden" name="pass" value="single" />
-          <p className="mt-2 rounded-btn bg-pollen p-4 text-[15px] leading-relaxed">지난번 매칭이 안 돼 보관한 1회권을 사용해요. 추가 결제는 없어요.</p>
+          <p className="mt-2 rounded-btn bg-pollen p-4 text-[15px] leading-relaxed">
+            {kept === "single" ? "지난번 매칭이 안 돼 보관한 1회권을 사용해요." : "이용 중인 멤버십으로 신청해요."} 추가 결제는 없어요.
+          </p>
         </section>
       ) : (
       <fieldset>
@@ -71,7 +73,7 @@ export function ApplyForm({ slots, plans, kept }: { slots: Slot[]; plans: Plan[]
       </section>
 
       {state.error && <p role="alert" className="text-[15px] font-medium text-danger">{state.error}</p>}
-      <Button type="submit" disabled={pending}>{pending ? "신청 중…" : kept ? "보관한 이용권으로 신청하기" : `${price.toLocaleString("ko-KR")}원 결제하고 신청하기`}</Button>
+      <Button type="submit" disabled={pending}>{pending ? "신청 중…" : kept ? "추가 결제 없이 신청하기" : `${price.toLocaleString("ko-KR")}원 결제하고 신청하기`}</Button>
     </form>
   );
 }

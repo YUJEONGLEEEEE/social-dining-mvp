@@ -346,9 +346,11 @@ export async function confirmNoShowAction(formData: FormData) {
   const applicationId = String(formData.get("applicationId") ?? "");
   if (!UUID.test(applicationId)) redirect("/admin/participants");
   const db = createAdminClient();
-  const { data: app } = await db.from("applications").select("id, profile_id, match_status, attendance_status, profiles(no_show_count)")
+  const { data: app } = await db.from("applications").select("id, profile_id, match_status, attendance_status, profiles(no_show_count), table_members(dining_tables(event_slots(starts_at)))")
     .eq("sandbox_id", session.sandboxId).eq("id", applicationId).maybeSingle();
-  if (!app || app.match_status !== "confirmed" || app.attendance_status === "checked_in") redirect("/admin/participants");
+  const startsAt = (app?.table_members as unknown as { dining_tables: { event_slots: { starts_at: string } } }[] | undefined)?.[0]?.dining_tables.event_slots.starts_at;
+  // Only after the meal is over, and only for someone who never checked in.
+  if (!app || app.match_status !== "confirmed" || app.attendance_status === "checked_in" || !startsAt || !mealIsOver(startsAt, session.demoClock)) redirect("/admin/participants");
   const { data: marked } = await db.from("applications").update({ attendance_status: "no_show" }).eq("id", app.id).neq("attendance_status", "no_show").select("id");
   if (marked?.length) {
     const count = ((app.profiles as unknown as { no_show_count: number } | null)?.no_show_count ?? 0) + 1;

@@ -28,6 +28,8 @@ export default async function Resolve({ params, searchParams }: { params: Promis
   const failed = app.match_status === "failed";
   const slots = failed && session.demoClock ? await alternativeSlots(session.sandboxId, session.demoClock) : [];
   const refund = failed ? await refundableAmount(session.sandboxId, app.pass_id) : 0;
+  const { data: pass } = app.pass_id ? await db.from("passes").select("kind").eq("id", app.pass_id).maybeSingle() : { data: null };
+  const membership = !!pass && pass.kind !== "single";
 
   return (
     <main className="flex flex-1 flex-col px-5 pt-4">
@@ -57,7 +59,7 @@ export default async function Resolve({ params, searchParams }: { params: Promis
           </div>
           <div className="mt-auto space-y-2 py-5">
             {slots.length > 0 && <button name="choice" value="move" className="h-[52px] w-full rounded-btn bg-ink font-semibold text-paper">이 일정으로 옮기기</button>}
-            <button name="choice" value="keep" className="h-[52px] w-full rounded-btn border-[1.5px] border-ink font-semibold">이용권으로 보관하기</button>
+            <button name="choice" value="keep" className="h-[52px] w-full rounded-btn border-[1.5px] border-ink font-semibold">{membership ? "멤버십 유지하고 나중에 신청하기" : "이용권으로 보관하기"}</button>
             {refund > 0 && <button name="choice" value="refund" className="h-11 w-full font-medium text-graphite underline underline-offset-4">{refund.toLocaleString("ko-KR")}원 환불받기</button>}
           </div>
         </form>
@@ -68,10 +70,12 @@ export default async function Resolve({ params, searchParams }: { params: Promis
             <p key={i} className="mt-1.5 text-[15px] leading-relaxed">
               {r.kind === "refunded"
                 ? `${Number((r.detail as { amount?: number })?.amount ?? 0).toLocaleString("ko-KR")}원을 원래 결제 수단으로 환불했어요. (모의 환불)`
-                : RESULT[r.kind]}
+                : r.kind === "kept_pass" && (r.detail as { membership?: boolean } | null)?.membership
+                  ? "멤버십은 그대로 유지돼요. 기간 안에 원하는 날 다시 신청할 수 있어요."
+                  : RESULT[r.kind]}
             </p>
           ))}
-          {resolutions?.some((r) => r.kind === "kept_pass") && <Link href="/app/apply" className="mt-4 flex h-[52px] items-center justify-center rounded-btn border-[1.5px] border-ink font-semibold">보관한 이용권으로 다시 신청하기</Link>}
+          {resolutions?.some((r) => r.kind === "kept_pass") && <Link href="/app/apply" className="mt-4 flex h-[52px] items-center justify-center rounded-btn border-[1.5px] border-ink font-semibold">추가 결제 없이 다시 신청하기</Link>}
           <Link href="/app" className="mt-4 flex h-[52px] items-center justify-center rounded-btn bg-ink font-semibold text-paper">홈으로</Link>
         </section>
       )}

@@ -175,8 +175,11 @@ export async function openNextWeek(sandboxId: string, weekOf: string) {
   const { data: already } = await db.from("applications").select("profile_id").eq("sandbox_id", sandboxId).eq("week_of", NEXT_WEEK);
   const fresh = people.filter((p) => !(already ?? []).some((a) => a.profile_id === p));
   if (fresh.length) {
-    const { data: passes } = await db.from("applications").select("profile_id, pass_id").eq("sandbox_id", sandboxId).eq("week_of", weekOf).in("profile_id", fresh);
-    const passOf = new Map((passes ?? []).map((p) => [p.profile_id, p.pass_id]));
+    // A membership carries over to the next week; a used single pass does not (nothing left to refund on it).
+    const { data: passes } = await db.from("applications").select("profile_id, pass_id, passes(kind)").eq("sandbox_id", sandboxId).eq("week_of", weekOf).in("profile_id", fresh);
+    const passOf = new Map((passes ?? [])
+      .filter((p) => (p.passes as unknown as { kind: string } | null)?.kind?.startsWith("membership"))
+      .map((p) => [p.profile_id, p.pass_id]));
     const apps = fresh.map((profile_id) => ({ id: crypto.randomUUID(), sandbox_id: sandboxId, profile_id, pass_id: passOf.get(profile_id) ?? null, week_of: NEXT_WEEK, payment_status: "paid" }));
     await db.from("applications").insert(apps);
     await db.from("application_options").insert(apps.map((a) => ({ sandbox_id: sandboxId, application_id: a.id, event_slot_id: slotId, priority: 1 })));
