@@ -16,7 +16,7 @@ export default async function My() {
   const { data: passes } = await db.from("passes").select("kind, remaining_count, expires_at").eq("profile_id", session.profileId);
   const { data: history } = await db
     .from("applications")
-    .select("id, week_of, match_status, attendance_status, feedbacks(id), application_options(event_slots(region))")
+    .select("id, week_of, match_status, attendance_status, feedbacks(id), application_options(priority, event_slots(region))")
     .eq("profile_id", session.profileId)
     .order("week_of", { ascending: false });
 
@@ -48,7 +48,7 @@ export default async function My() {
         <h2 className="font-bold">참가 이력</h2>
         <ul className="mt-2 space-y-2">
           {history?.map((h) => {
-            const region = (h.application_options as unknown as { event_slots: { region: string } }[])[0]?.event_slots.region;
+            const region = [...(h.application_options as unknown as { priority: number; event_slots: { region: string } }[])].sort((a, b) => a.priority - b.priority)[0]?.event_slots.region;
             const feedback = (h.feedbacks as unknown as { id: string }[] | { id: string } | null);
             const hasFeedback = Array.isArray(feedback) ? feedback.length > 0 : !!feedback;
             return (
