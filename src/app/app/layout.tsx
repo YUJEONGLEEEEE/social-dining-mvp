@@ -11,7 +11,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const session = await requireDemoSession();
   const next = NEXT_STEP[session.stage];
   // Matching waits for the visitor's own application, so the first step points to 신청 until then.
-  const { count: applied } = session.stage === "applied"
+  const { count: applied } = session.stage === "applied" && session.persona === "me"
     ? await createAdminClient().from("applications").select("id", { count: "exact", head: true }).eq("sandbox_id", session.sandboxId).eq("profile_id", session.meProfileId)
     : { count: 1 };
   return (

@@ -120,7 +120,8 @@ export default async function AppHome() {
 function Hello({ name, line, title }: { name: string; line: string; title: string }) {
   return (
     <div className="mb-5 mt-1">
-      <p className="text-[15px] text-graphite">{name}님, {line}</p>
+      {/* The demo visitor is called "나", which reads oddly with 님. */}
+      <p className="text-[15px] text-graphite">{name && name !== "나" ? `${name}님, ` : ""}{line}</p>
       <h1 className="mt-1.5 whitespace-pre-line text-[30px] font-extrabold leading-[1.2] tracking-[-0.035em]">{title}</h1>
     </div>
   );

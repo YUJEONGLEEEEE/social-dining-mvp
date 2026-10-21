@@ -8,6 +8,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createDemoSandbox } from "@/lib/demo/sandbox";
 import { STAGES, advanceDemo, type Stage } from "@/lib/demo/clock";
 import { resolveFailedMatch, type ResolveChoice } from "@/lib/participant/resolve";
+import { mealIsOver } from "@/lib/participant/table";
 import { PASS_PLANS, submitApplication, type PassKind } from "@/lib/participant/apply";
 import { submitFeedback, type PersonChoice } from "@/lib/feedback/loop";
 import { resolveVenueShortage } from "@/lib/automation/meetup";
@@ -103,12 +104,13 @@ export type ApplyState = { error?: string };
 /** 신청 + 모의 결제 (PRD completion condition 1). Slots and the plan are checked on the server. */
 export async function applyAction(_: ApplyState, formData: FormData): Promise<ApplyState> {
   const session = await requireDemoSession();
-  if (session.persona !== "me") return { error: "내 시점에서만 신청할 수 있어요." };
+  const { data: profile } = await createAdminClient().from("profiles").select("consented_at, is_virtual").eq("id", session.profileId).single();
+  if (session.persona === "me" && !profile?.consented_at) return { error: "프로필과 개인정보 동의를 먼저 저장해 주세요." };
   const passKind = String(formData.get("pass") ?? "");
   if (!(passKind in PASS_PLANS)) return { error: "이용권을 골라 주세요." };
   if (formData.get("agree") !== "on") return { error: "환불·취소 규정에 동의해 주세요." };
   const result = await submitApplication(
-    session.sandboxId, session.meProfileId, session.demoClock ?? new Date().toISOString(),
+    session.sandboxId, session.profileId, session.demoClock ?? new Date().toISOString(),
     String(formData.get("slot") ?? ""), formData.get("otherSlots") === "on", passKind as PassKind,
   );
   if ("error" in result) return { error: result.error };
@@ -195,7 +197,12 @@ export async function resolveFailedMatchAction(formData: FormData) {
   const slotId = String(formData.get("slotId") ?? "") || null;
   if (!UUID.test(applicationId) || !["move", "keep", "refund"].includes(choice)) redirect("/app");
   if (slotId && !UUID.test(slotId)) redirect(`/app/resolve/${applicationId}`);
-  await resolveFailedMatch(session.sandboxId, session.profileId, applicationId, choice as ResolveChoice, slotId);
+  try {
+    await resolveFailedMatch(session.sandboxId, session.profileId, session.demoClock ?? new Date().toISOString(), applicationId, choice as ResolveChoice, slotId);
+  } catch {
+    // Stale page (reset in another tab, slot gone): show a plain message instead of an error screen.
+    redirect(`/app/resolve/${applicationId}?error=1`);
+  }
   revalidatePath("/", "layout");
   redirect(`/app/resolve/${applicationId}`);
 }
@@ -215,6 +222,9 @@ export async function submitFeedbackAction(_: FeedbackState, formData: FormData)
   const { data: seat } = await db.from("table_members").select("application_id")
     .eq("sandbox_id", session.sandboxId).eq("table_id", tableId).eq("profile_id", session.profileId).is("left_at", null).maybeSingle();
   if (!seat) return { error: "이 식탁의 참가자만 피드백을 남길 수 있어요." };
+  const { data: slot } = await db.from("dining_tables").select("event_slots(starts_at)").eq("id", tableId).single();
+  const startsAt = (slot?.event_slots as unknown as { starts_at: string } | null)?.starts_at;
+  if (!startsAt || !mealIsOver(startsAt, session.demoClock)) return { error: "식사가 끝난 뒤에 피드백을 남길 수 있어요." };
 
   const choices: PersonChoice[] = [];
   for (const [key, value] of formData.entries()) {
@@ -222,11 +232,13 @@ export async function submitFeedbackAction(_: FeedbackState, formData: FormData)
     const target = key.slice("person:".length);
     if (UUID.test(target) && (value === "again" || value === "neutral" || value === "never")) choices.push({ targetProfileId: target, choice: value });
   }
+  let result: Awaited<ReturnType<typeof submitFeedback>>;
   try {
-    await submitFeedback(session.sandboxId, seat.application_id, { rating, comment, choices }, "participant");
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "저장하지 못했어요." };
+    result = await submitFeedback(session.sandboxId, seat.application_id, { rating, comment, choices }, "participant");
+  } catch {
+    return { error: "저장하지 못했어요. 잠시 후 다시 시도해 주세요." };
   }
+  if (result.duplicate) redirect("/app");
 
   const reported = String(formData.get("report") ?? "");
   const reason = String(formData.get("reportReason") ?? "").trim().slice(0, 500);
@@ -251,7 +263,11 @@ export async function resolveVenueShortageAction(formData: FormData) {
   const exceptionId = String(formData.get("exceptionId") ?? "");
   const venueId = String(formData.get("venueId") ?? "");
   if (!UUID.test(exceptionId) || !UUID.test(venueId)) redirect("/admin");
-  await resolveVenueShortage(session.sandboxId, exceptionId, venueId, "operator");
+  try {
+    await resolveVenueShortage(session.sandboxId, exceptionId, venueId, "operator");
+  } catch {
+    redirect("/admin?error=venue");
+  }
   revalidatePath("/", "layout");
   redirect("/admin");
 }

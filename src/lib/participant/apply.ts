@@ -41,9 +41,33 @@ export async function submitApplication(
     .eq("sandbox_id", sandboxId)
     .eq("profile_id", profileId)
     .eq("week_of", first.event_date)
-    .neq("application_status", "cancelled")
+    .not("application_status", "in", "(cancelled,moved)")
     .limit(1);
   if (existing?.length) return { already: true };
+
+  // A pass kept after a failed match is used first, with no new payment (RET-03).
+  const kept = await keptPass(sandboxId, profileId);
+  if (kept) {
+    const { data: claimed } = await db.from("passes").update({ remaining_count: kept.remaining_count - 1 }).eq("id", kept.id).eq("remaining_count", kept.remaining_count).select("id");
+    if (claimed?.length) {
+      const { data: app, error } = await db
+        .from("applications")
+        .insert({ sandbox_id: sandboxId, profile_id: profileId, pass_id: kept.id, week_of: first.event_date, payment_status: "paid", created_at: demoClock })
+        .select("id")
+        .single();
+      if (error) return { error: "신청하지 못했어요. 잠시 후 다시 시도해 주세요." };
+      await db.from("application_options").insert(slotIds.map((id, i) => ({ sandbox_id: sandboxId, application_id: app.id, event_slot_id: id, priority: i + 1 })));
+      await db.from("notifications").insert({
+        sandbox_id: sandboxId, profile_id: profileId, type: "application_paid", title: "보관한 이용권으로 신청했어요",
+        body: "추가 결제 없이 신청이 완료됐어요. 매칭 마감 후 결과를 알려드릴게요.", link: "/app", dedupe_key: `application_paid:${app.id}`,
+      });
+      await db.from("audit_logs").insert({
+        sandbox_id: sandboxId, entity: "application", entity_id: app.id, actor: "participant", action: "apply_with_kept_pass",
+        after: { pass: kept.id, slots: slotIds },
+      });
+      return { already: false };
+    }
+  }
 
   const startsAt = new Date(demoClock);
   const { data: pass, error: passError } = await db
@@ -76,4 +100,17 @@ export async function submitApplication(
     after: { pass: passKind, amount: plan.price, slots: slotIds },
   });
   return { already: false };
+}
+
+/** A single-use pass returned to the participant after a failed match, if any is left. */
+export async function keptPass(sandboxId: string, profileId: string) {
+  const { data } = await createAdminClient()
+    .from("passes")
+    .select("id, remaining_count")
+    .eq("sandbox_id", sandboxId)
+    .eq("profile_id", profileId)
+    .gt("remaining_count", 0)
+    .limit(1)
+    .maybeSingle();
+  return data as { id: string; remaining_count: number } | null;
 }

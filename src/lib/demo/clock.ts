@@ -4,6 +4,7 @@ import { runMatching } from "../matching/run.ts";
 import { postConversationCards, requestFeedback, sendReminders } from "../automation/meetup.ts";
 import { openNextWeek, simulateVirtualFeedback } from "../feedback/loop.ts";
 import { DEMO_WEEK } from "./sandbox.ts";
+import { submitApplication } from "../participant/apply.ts";
 
 // The demo bar moves a virtual clock through the S1 scenario. Each step runs
 // the same automation the real schedule would run at that time, in order.
@@ -34,16 +35,39 @@ export async function advanceDemo(sandboxId: string, ownerUserId: string, from: 
   const db = createAdminClient();
   const { data: sandbox } = await db.from("sandboxes").select("demo_stage, me_profile_id").eq("id", sandboxId).eq("owner_user_id", ownerUserId).single();
   if (!sandbox || sandbox.demo_stage !== from) return; // stale button: someone already advanced
-  if (from === "applied") {
-    // The visitor applies on their own first; matching without them would skip the scenario.
-    const { count } = await db.from("applications").select("id", { count: "exact", head: true }).eq("sandbox_id", sandboxId).eq("profile_id", sandbox.me_profile_id);
-    if (!count) return;
-  }
-
   const index = STAGES.indexOf(from);
   const to = STAGES[index + 1];
   if (!to) return;
 
+  // Claim the step first, so two quick clicks cannot run the same automation twice.
+  const { data: claimed } = await db.from("sandboxes").update({ demo_stage: to }).eq("id", sandboxId).eq("demo_stage", from).select("id");
+  if (!claimed?.length) return;
+  try {
+    if (from === "applied") {
+      // Normally the visitor applies on the 신청 screen first. When the clock is moved from the
+      // operator screen or the failing participant's view instead, "me" applies with the defaults
+      // (Hongdae, single pass) so the scenario never gets stuck.
+      const { count } = await db.from("applications").select("id", { count: "exact", head: true }).eq("sandbox_id", sandboxId).eq("profile_id", sandbox.me_profile_id);
+      if (!count) {
+        const { data: slot } = await db.from("event_slots").select("id").eq("sandbox_id", sandboxId).eq("event_date", DEMO_WEEK).eq("region", "hongdae").single();
+        if (slot) await submitApplication(sandboxId, sandbox.me_profile_id, STAGE_CLOCK.applied, slot.id, false, "single");
+      }
+    }
+    await runStep(sandboxId, from, actor);
+  } catch (error) {
+    await db.from("sandboxes").update({ demo_stage: from }).eq("id", sandboxId);
+    throw error;
+  }
+
+  await db.from("sandboxes").update({ demo_clock: STAGE_CLOCK[to] }).eq("id", sandboxId);
+  await db.from("audit_logs").insert({
+    sandbox_id: sandboxId, entity: "sandbox", entity_id: sandboxId, actor, action: "advance_demo_clock",
+    before: { stage: from }, after: { stage: to, clock: STAGE_CLOCK[to] },
+  });
+}
+
+async function runStep(sandboxId: string, from: Stage, actor: string) {
+  const db = createAdminClient();
   if (from === "applied") await runMatching(sandboxId, DEMO_WEEK, actor);
   if (from === "matched") {
     await sendReminders(sandboxId, DEMO_WEEK);
@@ -62,12 +86,6 @@ export async function advanceDemo(sandboxId: string, ownerUserId: string, from: 
     const next = await openNextWeek(sandboxId, DEMO_WEEK);
     await runMatching(sandboxId, next.weekOf, actor);
   }
-
-  await db.from("sandboxes").update({ demo_stage: to, demo_clock: STAGE_CLOCK[to] }).eq("id", sandboxId);
-  await db.from("audit_logs").insert({
-    sandbox_id: sandboxId, entity: "sandbox", entity_id: sandboxId, actor, action: "advance_demo_clock",
-    before: { stage: from }, after: { stage: to, clock: STAGE_CLOCK[to] },
-  });
 }
 
 const CHATTER = [

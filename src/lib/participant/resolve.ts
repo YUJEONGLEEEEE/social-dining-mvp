@@ -5,27 +5,46 @@ import { createAdminClient } from "../supabase/admin.ts";
 // No operator approval is needed for any of them.
 
 export type ResolveChoice = "move" | "keep" | "refund";
-const NEXT_WEEK = "2026-10-29";
-const PRICE = 9900;
+// The next Thursdays the demo can offer, with their Tuesday-24시 deadlines.
+const UPCOMING = [
+  { date: "2026-10-29", deadline: "2026-10-28" },
+  { date: "2026-11-05", deadline: "2026-11-04" },
+];
 
 function kst(date: string, hour: number) {
   return new Date(`${date}T${String(hour).padStart(2, "0")}:00:00+09:00`).toISOString();
 }
 
 /** Upcoming slots a failed participant can move to (created on demand in the demo). */
-export async function alternativeSlots(sandboxId: string) {
+export async function alternativeSlots(sandboxId: string, demoClock: string) {
   const db = createAdminClient();
+  // The first Thursday whose matching deadline is still ahead on the demo clock.
+  const week = UPCOMING.find((w) => new Date(kst(w.deadline, 0)) > new Date(demoClock));
+  if (!week) return [];
   for (const region of ["hongdae", "gangnam"]) {
-    const { data } = await db.from("event_slots").select("id").eq("sandbox_id", sandboxId).eq("event_date", NEXT_WEEK).eq("region", region).maybeSingle();
+    const { data } = await db.from("event_slots").select("id").eq("sandbox_id", sandboxId).eq("event_date", week.date).eq("region", region).maybeSingle();
     if (!data) {
-      await db.from("event_slots").insert({ sandbox_id: sandboxId, event_date: NEXT_WEEK, region, starts_at: kst(NEXT_WEEK, 19), match_deadline_at: kst("2026-10-28", 0) });
+      await db.from("event_slots").insert({ sandbox_id: sandboxId, event_date: week.date, region, starts_at: kst(week.date, 19), match_deadline_at: kst(week.deadline, 0) });
     }
   }
-  const { data } = await db.from("event_slots").select("id, region, starts_at, match_deadline_at").eq("sandbox_id", sandboxId).eq("event_date", NEXT_WEEK).order("region", { ascending: false });
+  const { data } = await db.from("event_slots").select("id, event_date, region, starts_at, match_deadline_at").eq("sandbox_id", sandboxId).eq("event_date", week.date).order("region", { ascending: false });
   return data ?? [];
 }
 
-export async function resolveFailedMatch(sandboxId: string, profileId: string, applicationId: string, choice: ResolveChoice, slotId: string | null) {
+/** What is left to refund for this application's pass: paid minus already refunded. */
+export async function refundableAmount(sandboxId: string, passId: string | null) {
+  if (!passId) return 0;
+  const { data } = await createAdminClient().from("payments").select("kind, amount").eq("sandbox_id", sandboxId).eq("pass_id", passId);
+  return Math.max(0, (data ?? []).reduce((sum, p) => sum + (p.kind === "pay" ? p.amount : -p.amount), 0));
+}
+
+/** Moves the application out of "failed" only once, so a double click cannot pay out twice. */
+async function claim(db: ReturnType<typeof createAdminClient>, applicationId: string, update: Record<string, string>) {
+  const { data } = await db.from("applications").update(update).eq("id", applicationId).eq("match_status", "failed").select("id");
+  return !!data?.length;
+}
+
+export async function resolveFailedMatch(sandboxId: string, profileId: string, demoClock: string, applicationId: string, choice: ResolveChoice, slotId: string | null) {
   const db = createAdminClient();
   const { data: app } = await db
     .from("applications")
@@ -42,23 +61,23 @@ export async function resolveFailedMatch(sandboxId: string, profileId: string, a
   let notice: string;
 
   if (choice === "move") {
-    const slots = await alternativeSlots(sandboxId);
+    const slots = await alternativeSlots(sandboxId, demoClock);
     const slot = slots.find((s) => s.id === slotId);
     if (!slot) throw new Error("옮길 일정을 골라 주세요.");
+    if (!(await claim(db, app.id, { application_status: "moved", match_status: "resolved" }))) return { already: true };
     // The payment moves with the participant: the new application starts as paid.
     const { data: moved, error } = await db
       .from("applications")
-      .insert({ sandbox_id: sandboxId, profile_id: profileId, pass_id: app.pass_id, week_of: NEXT_WEEK, payment_status: "paid" })
+      .insert({ sandbox_id: sandboxId, profile_id: profileId, pass_id: app.pass_id, week_of: slot.event_date, payment_status: "paid" })
       .select("id")
       .single();
     if (error) throw new Error(error.message);
     await db.from("application_options").insert({ sandbox_id: sandboxId, application_id: moved.id, event_slot_id: slot.id, priority: 1 });
-    await db.from("applications").update({ application_status: "moved", match_status: "resolved" }).eq("id", app.id);
     kind = "moved_slot";
     detail = { new_application_id: moved.id, event_slot_id: slot.id };
-    notice = "다음 주 목요일 일정으로 옮겼어요. 결제는 그대로 이어져요.";
+    notice = "다른 목요일 일정으로 옮겼어요. 결제는 그대로 이어져요.";
   } else if (choice === "keep") {
-    await db.from("applications").update({ match_status: "resolved", payment_status: "pass_kept" }).eq("id", app.id);
+    if (!(await claim(db, app.id, { match_status: "resolved", payment_status: "pass_kept" }))) return { already: true };
     if (app.pass_id) {
       const { data: pass } = await db.from("passes").select("remaining_count").eq("id", app.pass_id).single();
       if (pass && pass.remaining_count !== null) await db.from("passes").update({ remaining_count: pass.remaining_count + 1 }).eq("id", app.pass_id);
@@ -67,10 +86,12 @@ export async function resolveFailedMatch(sandboxId: string, profileId: string, a
     notice = "이용권 1회로 보관했어요. 원하는 날 다시 신청할 수 있어요.";
   } else {
     // Mock refund to the original payment method, no account details or approval needed.
-    await db.from("applications").update({ match_status: "resolved", payment_status: "refunded" }).eq("id", app.id);
-    await db.from("payments").insert({ sandbox_id: sandboxId, application_id: app.id, pass_id: app.pass_id, kind: "refund", amount: PRICE });
+    const amount = await refundableAmount(sandboxId, app.pass_id);
+    if (!(await claim(db, app.id, { match_status: "resolved", payment_status: "refunded" }))) return { already: true };
+    await db.from("payments").insert({ sandbox_id: sandboxId, application_id: app.id, pass_id: app.pass_id, kind: "refund", amount });
     kind = "refunded";
-    notice = `${PRICE.toLocaleString("ko-KR")}원을 원래 결제 수단으로 환불했어요.`;
+    detail = { amount };
+    notice = `${amount.toLocaleString("ko-KR")}원을 원래 결제 수단으로 환불했어요.`;
   }
 
   await db.from("match_resolutions").insert({ sandbox_id: sandboxId, application_id: app.id, kind, reason: "참가자 선택", detail });

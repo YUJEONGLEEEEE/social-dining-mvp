@@ -6,7 +6,7 @@ import { dateLabel } from "@/lib/format";
 import { signOut } from "../../actions";
 
 const MATCH_LABEL: Record<string, string> = {
-  waiting: "매칭 대기", matching: "매칭 중", reassigning: "재배치 중", confirmed: "참여", failed: "매칭 안 됨", resolved: "처리 완료",
+  waiting: "매칭 대기", matching: "매칭 중", reassigning: "재배치 중", confirmed: "매칭 확정", failed: "매칭 안 됨", resolved: "처리 완료",
 };
 
 export default async function My() {
@@ -16,7 +16,7 @@ export default async function My() {
   const { data: passes } = await db.from("passes").select("kind, remaining_count, expires_at").eq("profile_id", session.profileId);
   const { data: history } = await db
     .from("applications")
-    .select("id, week_of, match_status, feedbacks(id), application_options(event_slots(region))")
+    .select("id, week_of, match_status, attendance_status, feedbacks(id), application_options(event_slots(region))")
     .eq("profile_id", session.profileId)
     .order("week_of", { ascending: false });
 
@@ -36,7 +36,9 @@ export default async function My() {
         <h2 className="font-bold">이용권</h2>
         {passes?.map((p, i) => (
           <p key={i} className="mt-1.5">
-            {p.kind === "single" ? `1회권 · 남은 횟수 ${p.remaining_count}회` : `멤버십 · ${p.expires_at ? `${dateLabel(p.expires_at)}까지` : ""}`}
+            {p.kind === "single"
+              ? `1회권 · ${p.remaining_count ? `보관 중 ${p.remaining_count}회 (다음 신청에 사용)` : "신청에 사용함"}`
+              : `멤버십 · ${p.expires_at ? `${dateLabel(p.expires_at)}까지` : ""}`}
           </p>
         ))}
         <p className="mt-2 text-[14px] text-graphite">노쇼 {profile?.no_show_count ?? 0}회 · 2회가 되면 4주간 신청이 제한돼요</p>
@@ -52,7 +54,7 @@ export default async function My() {
             return (
               <li key={h.id} className="flex justify-between rounded-btn bg-mist px-4 py-3">
                 <span>{dateLabel(`${h.week_of}T10:00:00Z`)} · {region ? REGION_LABEL[region] : ""}</span>
-                <span className="text-graphite">{MATCH_LABEL[h.match_status]}{hasFeedback ? " · 피드백 완료" : ""}</span>
+                <span className="text-graphite">{h.match_status === "confirmed" && h.attendance_status === "checked_in" ? "참여" : MATCH_LABEL[h.match_status]}{hasFeedback ? " · 피드백 완료" : ""}</span>
               </li>
             );
           })}

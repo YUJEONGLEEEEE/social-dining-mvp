@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { requireDemoSession } from "@/lib/auth/session";
-import { getMyTable } from "@/lib/participant/table";
+import { getMyTable, mealIsOver } from "@/lib/participant/table";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { FeedbackForm } from "./feedback-form";
 
@@ -10,6 +10,7 @@ export default async function Feedback({ params }: { params: Promise<{ tableId: 
   if (!/^[0-9a-f-]{36}$/.test(tableId)) notFound();
   const data = await getMyTable(session, tableId);
   if (!data) notFound();
+  if (!mealIsOver(data.table.event_slots.starts_at, session.demoClock)) redirect(`/app/table/${tableId}`);
   const { data: done } = await createAdminClient().from("feedbacks").select("id").eq("application_id", data.applicationId).maybeSingle();
   if (done) redirect("/app");
   const people = data.table.table_members

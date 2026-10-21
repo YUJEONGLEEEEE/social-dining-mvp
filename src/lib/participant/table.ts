@@ -3,6 +3,11 @@ import { createAdminClient } from "../supabase/admin.ts";
 import type { DemoSession } from "../auth/session.ts";
 
 /** A table the current persona sits at, or null. Membership is checked on the server. */
+/** Feedback opens once the meal is over on the demo clock (two hours after it starts). */
+export function mealIsOver(startsAt: string, demoClock: string | null) {
+  return !!demoClock && new Date(demoClock).getTime() >= new Date(startsAt).getTime() + 2 * 3600_000;
+}
+
 export async function getMyTable(session: DemoSession, tableId: string) {
   const db = createAdminClient();
   const { data: seat } = await db

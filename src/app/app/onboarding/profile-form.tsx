@@ -77,7 +77,7 @@ export function ProfileForm({ profile }: { profile: Profile }) {
         <span>개인정보 수집·이용과 운영 정책(화요일 24시 이후 환불 불가, 당일 취소 환불 없음, 노쇼 2회 시 4주 신청 제한)에 동의해요.</span>
       </label>
       {state.error && <p role="alert" className="text-[15px] font-medium text-danger">{state.error}</p>}
-      <Button type="submit" disabled={pending}>{pending ? "저장 중…" : "저장하고 신청 상태 보기"}</Button>
+      <Button type="submit" disabled={pending}>{pending ? "저장 중…" : "저장하고 다음으로"}</Button>
     </form>
   );
 }

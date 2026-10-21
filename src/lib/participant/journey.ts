@@ -15,7 +15,8 @@ export async function getJourney(session: DemoSession) {
     .select("id, week_of, application_status, payment_status, match_status, attendance_status, match_note, pass_id, passes(kind, price), application_options(priority, event_slots(id, event_date, region, starts_at, match_deadline_at))")
     .eq("sandbox_id", sid)
     .eq("profile_id", session.profileId)
-    .order("week_of", { ascending: false });
+    .order("week_of", { ascending: false })
+    .order("created_at", { ascending: false });
   const application = apps?.[0] ?? null;
 
   let table: {
