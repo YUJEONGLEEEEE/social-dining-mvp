@@ -14,6 +14,9 @@ const ACTION: Record<string, string> = {
   resolve_keep: "실패 처리: 이용권 보관",
   resolve_refund: "실패 처리: 환불",
   update_rules: "매칭 규칙 변경",
+  apply_and_pay: "신청·모의 결제",
+  apply_with_kept_pass: "보관 이용권으로 신청",
+  check_in: "체크인",
 };
 const ACTOR: Record<string, string> = {
   system: "시스템", operator: "운영자", participant: "참가자", "demo-visitor": "데모 진행", "test-account": "데모 진행", "demo-simulation": "가상 참가자",

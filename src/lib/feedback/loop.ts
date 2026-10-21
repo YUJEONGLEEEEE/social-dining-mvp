@@ -1,6 +1,6 @@
 import "server-only";
 import { createAdminClient } from "../supabase/admin.ts";
-import { DEFAULT_RULES, matchWeek, pairKey, type Applicant, type Relations } from "../matching/engine.ts";
+import { DEFAULT_RULES, matchWeek, pairKey, type Applicant, type Relations, type Rules } from "../matching/engine.ts";
 
 // Feedback after the meal, and how it changes the next match:
 //   both chose "again"  -> mutual_again (score bonus next time)
@@ -164,7 +164,9 @@ export async function openNextWeek(sandboxId: string, weekOf: string) {
   const { data: already } = await db.from("applications").select("profile_id").eq("sandbox_id", sandboxId).eq("week_of", NEXT_WEEK);
   const fresh = people.filter((p) => !(already ?? []).some((a) => a.profile_id === p));
   if (fresh.length) {
-    const apps = fresh.map((profile_id) => ({ id: crypto.randomUUID(), sandbox_id: sandboxId, profile_id, week_of: NEXT_WEEK, payment_status: "paid" }));
+    const { data: passes } = await db.from("applications").select("profile_id, pass_id").eq("sandbox_id", sandboxId).eq("week_of", weekOf).in("profile_id", fresh);
+    const passOf = new Map((passes ?? []).map((p) => [p.profile_id, p.pass_id]));
+    const apps = fresh.map((profile_id) => ({ id: crypto.randomUUID(), sandbox_id: sandboxId, profile_id, pass_id: passOf.get(profile_id) ?? null, week_of: NEXT_WEEK, payment_status: "paid" }));
     await db.from("applications").insert(apps);
     await db.from("application_options").insert(apps.map((a) => ({ sandbox_id: sandboxId, application_id: a.id, event_slot_id: slotId, priority: 1 })));
   }
@@ -186,6 +188,10 @@ export async function compareFeedbackEffect(sandboxId: string, weekOf: string, p
     .eq("payment_status", "paid");
   if (error) throw new Error(error.message);
   const { data: rels } = await db.from("user_relations").select("profile_id, other_profile_id, kind, source").eq("sandbox_id", sandboxId);
+  // Same rules the real run used, so "before" differs only by the feedback.
+  const { data: run } = await db.from("match_runs").select("rules_snapshot").eq("sandbox_id", sandboxId).eq("idempotency_key", `week:${weekOf}`).maybeSingle();
+  const snapshot = run?.rules_snapshot as Rules | null;
+  const rules = snapshot && "minScore" in snapshot ? snapshot : DEFAULT_RULES;
 
   type P = { id: string; display_name: string; birth_year: number; gender: "female" | "male"; mbti: string | null; interests: string[]; personality: string[]; wants: string[] };
   const applicants: Applicant[] = apps.map((a) => {
@@ -208,11 +214,27 @@ export async function compareFeedbackEffect(sandboxId: string, weekOf: string, p
   };
   const withFeedback = build(true);
   const tablemates = (rel: Relations) => {
-    const table = matchWeek(applicants, rel, DEFAULT_RULES).tables.find((t) => t.members.some((m) => m.profileId === profileId));
+    const table = matchWeek(applicants, rel, rules).tables.find((t) => t.members.some((m) => m.profileId === profileId));
     return { members: table?.members.filter((m) => m.profileId !== profileId) ?? [], reason: table?.reason ?? null, score: table?.score ?? null };
   };
   const before = tablemates(build(false));
-  const after = tablemates(withFeedback);
+  // "After" is the table this person was actually seated at, not a re-run.
+  const { data: seat } = await db
+    .from("table_members")
+    .select("table_id, dining_tables!inner(reason, score, event_slots!inner(event_date))")
+    .eq("profile_id", profileId)
+    .eq("dining_tables.event_slots.event_date", weekOf)
+    .is("left_at", null)
+    .maybeSingle();
+  const { data: mates } = seat
+    ? await db.from("table_members").select("profile_id, profiles(display_name)").eq("table_id", seat.table_id).is("left_at", null).neq("profile_id", profileId)
+    : { data: [] };
+  const seated = seat?.dining_tables as unknown as { reason: string | null; score: number | null } | undefined;
+  const after = {
+    members: (mates ?? []).map((m) => ({ profileId: m.profile_id, name: (m.profiles as unknown as { display_name: string }).display_name })),
+    reason: seated?.reason ?? null,
+    score: seated?.score ?? null,
+  };
   const label = (id: string) => {
     const key = pairKey(profileId, id);
     if (withFeedback.forbidden.has(key)) return "never";

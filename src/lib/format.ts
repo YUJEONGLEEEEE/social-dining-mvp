@@ -22,6 +22,9 @@ export function timeLabel(iso: string) {
 }
 
 export function dateTimeLabel(iso: string) {
+  const d = kst(iso);
+  // A midnight deadline belongs to the evening before ("화요일 24시"), not the next day.
+  if (d.getUTCHours() === 0 && d.getUTCMinutes() === 0) return `${dateLabel(new Date(new Date(iso).getTime() - 60000).toISOString())} 24시`;
   return `${dateLabel(iso)} ${timeLabel(iso)}`;
 }
 

@@ -51,6 +51,7 @@ type TableInfo = {
   score: number;
   reason: string | null;
   venue_id: string | null;
+  venues: { name: string; address: string | null } | null;
   event_slots: { region: string; starts_at: string; event_date: string };
   table_members: { profile_id: string; left_at: string | null; profiles: { budget: string | null } }[];
 };
@@ -58,7 +59,7 @@ type TableInfo = {
 async function loadTables(db: Db, sandboxId: string, filter: { runId?: string; tableId?: string; weekOf?: string }) {
   let query = db
     .from("dining_tables")
-    .select("id, score, reason, venue_id, event_slots!inner(region, starts_at, event_date), table_members(profile_id, left_at, profiles(budget))")
+    .select("id, score, reason, venue_id, venues(name, address), event_slots!inner(region, starts_at, event_date), table_members(profile_id, left_at, profiles(budget))")
     .eq("sandbox_id", sandboxId)
     .eq("status", "confirmed");
   if (filter.runId) query = query.eq("match_run_id", filter.runId);
@@ -80,6 +81,12 @@ async function announceTable(db: Db, sandboxId: string, table: TableInfo, venue:
       dedupe_key: `table:${table.id}:venue`,
     },
     ...(table.reason ? [{ table_id: table.id, kind: "system" as const, body: `함께하게 된 이유: ${table.reason}`, dedupe_key: `table:${table.id}:reason` }] : []),
+    {
+      table_id: table.id,
+      kind: "system",
+      body: "취소 안내: 화요일 24시(매칭 마감) 이후에는 환불되지 않아요. 당일 취소는 환불 없이 경고 1회, 노쇼가 2회 쌓이면 4주간 신청이 제한돼요. 식사비는 현장에서 각자 결제해요.",
+      dedupe_key: `table:${table.id}:policy`,
+    },
   ]);
   await sendNotifications(db, sandboxId, members.map((profile_id) => ({
     profile_id,
@@ -164,15 +171,21 @@ export async function assignVenues(sandboxId: string, runId: string, actor = "sy
 /** Operator fixes a venue-shortage case; the table goes back to the normal flow. */
 export async function resolveVenueShortage(sandboxId: string, exceptionId: string, venueId: string, actor: string) {
   const db = createAdminClient();
-  const { data: ex, error } = await db.from("exception_cases").select("id, table_id, status").eq("sandbox_id", sandboxId).eq("id", exceptionId).single();
-  if (error || !ex) throw new Error("예외 건을 찾을 수 없어요.");
+  const { data: ex } = await db.from("exception_cases").select("id, table_id, status, type, dining_tables(event_slots(region))").eq("sandbox_id", sandboxId).eq("id", exceptionId).maybeSingle();
+  if (!ex || ex.type !== "venue_shortage" || !ex.table_id) throw new Error("예외 건을 찾을 수 없어요.");
   if (ex.status !== "open") return { alreadyResolved: true };
-  const { data: venue } = await db.from("venues").select("id, name, address, tables_available").eq("sandbox_id", sandboxId).eq("id", venueId).single();
-  if (!venue) throw new Error("식당을 찾을 수 없어요.");
+  const region = (ex.dining_tables as unknown as { event_slots: { region: string } } | null)?.event_slots.region;
+  const { data: venue } = await db.from("venues").select("id, name, address, region, tables_available").eq("sandbox_id", sandboxId).eq("id", venueId).maybeSingle();
+  // A substitute must be in the same area as the table; seats beyond inventory mean the operator called ahead.
+  if (!venue || venue.region !== region) throw new Error("같은 지역의 식당을 골라 주세요.");
 
-  await db.from("dining_tables").update({ venue_id: venue.id }).eq("id", ex.table_id!);
+  // Claim the case first so a double click assigns only once.
+  const { data: claimed } = await db.from("exception_cases")
+    .update({ status: "resolved", resolution: `대체 식당 지정: ${venue.name}`, resolved_at: new Date().toISOString() })
+    .eq("id", ex.id).eq("status", "open").select("id");
+  if (!claimed?.length) return { alreadyResolved: true };
+  await db.from("dining_tables").update({ venue_id: venue.id }).eq("id", ex.table_id);
   await db.from("venues").update({ tables_available: Math.max(0, venue.tables_available - 1) }).eq("id", venue.id);
-  await db.from("exception_cases").update({ status: "resolved", resolution: `대체 식당 지정: ${venue.name}`, resolved_at: new Date().toISOString() }).eq("id", ex.id);
   const [table] = await loadTables(db, sandboxId, { tableId: ex.table_id! });
   if (table) await announceTable(db, sandboxId, table, venue);
   await db.from("audit_logs").insert({
@@ -208,15 +221,20 @@ export async function sendReminders(sandboxId: string, weekOf: string) {
   const tables = await loadTables(db, sandboxId, { weekOf });
   let sent = 0;
   for (const t of tables.filter((x) => x.venue_id)) {
+    const place = `${timeLabel(t.event_slots.starts_at)} · ${t.venues?.name ?? ""} · 예약명 "우연한 식탁"`;
     sent += await sendNotifications(db, sandboxId, t.table_members.map((m) => ({
       profile_id: m.profile_id,
       type: "reminder",
       title: "내일 저녁, 우연한 식탁이 열려요",
-      body: "참석 여부를 알려주세요. 당일 취소는 환불되지 않아요.",
+      body: `${place}. 참석 여부를 알려주세요. 당일 취소는 환불되지 않아요.`,
       link: `/app/table/${t.id}`,
       dedupe_key: `reminder:${t.id}:${m.profile_id}`,
     })));
-    await postChat(db, sandboxId, [{ table_id: t.id, kind: "system", body: "내일 만나요! 참석 여부를 앱에서 눌러 주세요.", dedupe_key: `table:${t.id}:reminder` }]);
+    await postChat(db, sandboxId, [{
+      table_id: t.id, kind: "system",
+      body: `내일 만나요! ${place}${t.venues?.address ? ` (${t.venues.address})` : ""}. 참석 여부를 앱에서 눌러 주세요.`,
+      dedupe_key: `table:${t.id}:reminder`,
+    }]);
   }
   return { sent };
 }

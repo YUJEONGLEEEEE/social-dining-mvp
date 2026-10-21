@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getJourney } from "@/lib/participant/journey";
 import { REGION_LABEL } from "@/lib/profile-options";
 import { dateLabel, dateTimeLabel, timeLabel, won } from "@/lib/format";
-import { PASS_PLANS } from "@/lib/participant/apply";
+import { PASS_PLANS, keptPass } from "@/lib/participant/apply";
 import { ApplyForm } from "./apply-form";
 
 const PAYMENT_LABEL: Record<string, string> = {
@@ -28,7 +28,13 @@ export default async function Apply() {
   const chosen = new Set(journey.slots.map((s) => s.id));
   const open = (slots ?? []).filter((s) => session.demoClock && s.match_deadline_at > new Date(session.demoClock).toISOString());
 
-  if (!journey.application && session.persona === "me" && open.length) {
+  // The form opens while there is an open week this person has not applied to yet.
+  const { data: active } = open.length
+    ? await createAdminClient().from("applications").select("id").eq("sandbox_id", session.sandboxId).eq("profile_id", session.profileId)
+      .in("week_of", [...new Set(open.map((s) => s.event_date))]).not("application_status", "in", "(cancelled,moved)").limit(1)
+    : { data: [] };
+  if (open.length && !active?.length) {
+    const kept = await keptPass(session.sandboxId, session.profileId);
     return (
       <main className="px-5 pb-10 pt-6">
         <h1 className="text-[24px] font-extrabold tracking-[-0.03em]">이번 주 식탁 신청</h1>
@@ -36,6 +42,7 @@ export default async function Apply() {
         <ApplyForm
           slots={open.map((s) => ({ id: s.id, title: `${dateLabel(s.starts_at)} ${timeLabel(s.starts_at)} · ${REGION_LABEL[s.region]}`, deadline: dateTimeLabel(s.match_deadline_at) }))}
           plans={PASSES}
+          kept={!!kept}
         />
       </main>
     );

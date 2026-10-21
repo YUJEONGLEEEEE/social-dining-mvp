@@ -34,7 +34,7 @@ export default async function Landing({ searchParams }: { searchParams: Promise<
       <section className="mt-10 rounded-card bg-mist p-5">
         <h2 className="text-[17px] font-bold">3분 데모 순서</h2>
         <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-[15px] leading-relaxed">
-          <li>프로필·선호 입력 후 신청 상태 확인</li>
+          <li>프로필·선호 입력 → 날짜·지역·이용권 고르고 모의 결제로 신청</li>
           <li>[마감 시각으로 이동] → 자동 매칭·재배치·확정, 함께하게 된 이유</li>
           <li>식당 자동 배정과 단체방 안내, D-1 리마인드, 식사 중 대화 카드</li>
           <li>식사 후 피드백 → 다음 회차 매칭에 반영된 결과 비교</li>

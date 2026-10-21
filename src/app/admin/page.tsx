@@ -14,7 +14,8 @@ const TYPE_LABEL: Record<string, string> = {
   other: "기타",
 };
 
-export default async function AdminDashboard() {
+export default async function AdminDashboard({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const { error } = await searchParams;
   const session = await requireDemoSession();
   const o = await getOverview(session, currentWeek(session));
   const open = o.exceptions.filter((e) => e.status === "open");
@@ -39,6 +40,7 @@ export default async function AdminDashboard() {
       <section className="mt-8">
         <h2 className="text-[17px] font-bold">예외 처리함</h2>
         <p className="mt-1 text-[14px] text-graphite">자동 재시도로도 해결되지 않은 건만 여기에 와요. 정상 흐름은 운영자 확인 없이 끝나요.</p>
+        {error && <p role="alert" className="mt-3 text-[15px] font-medium text-danger">처리하지 못했어요. 같은 지역의 식당을 골라 다시 시도해 주세요.</p>}
         {open.length === 0 && (
           <p className="mt-3 rounded-btn bg-mist p-4 text-[15px]">처리할 예외가 없어요.{!o.run && " 매칭이 끝나면 자동 처리 결과를 보여드려요."}</p>
         )}
@@ -63,10 +65,10 @@ export default async function AdminDashboard() {
                     <input type="hidden" name="exceptionId" value={e.id} />
                     <label htmlFor={`venue-${e.id}`} className="sr-only">대체 식당</label>
                     <select id={`venue-${e.id}`} name="venueId" required className="h-10 min-w-0 flex-1 rounded-sm border-[1.5px] border-line bg-paper px-3 text-[14px]">
-                      {/* Same-region venues first: the operator usually calls a nearby partner for one more table. */}
-                      {[...o.venues].sort((a, b) => Number(b.region === detail.region) - Number(a.region === detail.region) || b.tables_available - a.tables_available).map((v) => (
+                      {/* Same-region partners only; with no seats left the operator calls ahead for one more table. */}
+                      {o.venues.filter((v) => v.region === detail.region).sort((a, b) => b.tables_available - a.tables_available || b.rating - a.rating).map((v) => (
                         <option key={v.id} value={v.id}>
-                          {REGION_LABEL[v.region]} · {v.name} · 평점 {v.rating} · 남은 테이블 {v.tables_available}
+                          {v.name} · 평점 {v.rating} · {v.tables_available > 0 ? `남은 테이블 ${v.tables_available}` : "전화로 추가 좌석 확인"}
                         </option>
                       ))}
                     </select>
