@@ -2,15 +2,21 @@ import "server-only";
 import { createAdminClient } from "../supabase/admin.ts";
 import type { DemoSession } from "../auth/session.ts";
 
-/** The week the operator is looking at: the next one once the demo has moved on. */
-export function currentWeek(session: DemoSession) {
-  return session.stage === "next_matched" ? "2026-10-29" : "2026-10-22";
+/** Weeks the operator can look at so far; week two appears once the demo has moved on. */
+export function weeksSoFar(session: DemoSession) {
+  return session.stage === "next_matched" ? ["2026-10-22", "2026-10-29"] : ["2026-10-22"];
+}
+
+/** The week the operator is looking at: the one asked for, else the latest. */
+export function currentWeek(session: DemoSession, requested?: string) {
+  const weeks = weeksSoFar(session);
+  return requested && weeks.includes(requested) ? requested : weeks[weeks.length - 1];
 }
 
 export async function getOverview(session: DemoSession, weekOf: string) {
   const db = createAdminClient();
   const sid = session.sandboxId;
-  const { data: apps } = await db.from("applications").select("id, payment_status, match_status").eq("sandbox_id", sid).eq("week_of", weekOf);
+  const { data: apps } = await db.from("applications").select("id, payment_status, match_status, attendance_status").eq("sandbox_id", sid).eq("week_of", weekOf);
   const { data: tables } = await db
     .from("dining_tables")
     .select("id, score, reason, status, venue_id, venues(name), event_slots!inner(event_date, region), table_members(profile_id, left_at, profiles(display_name, birth_year, gender))")
@@ -43,6 +49,12 @@ export async function getOverview(session: DemoSession, weekOf: string) {
       seated,
       failed,
       open: open.length,
+      // 11장: people still choosing after a failed match, no-show candidates, unhandled reports.
+      choosing: (apps ?? []).filter((a) => a.match_status === "failed").length,
+      noShow: session.demoClock && new Date(session.demoClock) >= new Date(`${weekOf}T21:00:00+09:00`)
+        ? (apps ?? []).filter((a) => a.match_status === "confirmed" && !["checked_in", "no_show"].includes(a.attendance_status)).length
+        : 0,
+      reports: open.filter((e) => e.type === "safety_report").length,
     },
     tables: (tables ?? []) as unknown as {
       id: string; score: number | null; reason: string | null; status: string; venue_id: string | null;

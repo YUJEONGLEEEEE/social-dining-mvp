@@ -54,7 +54,7 @@ export async function createDemoSandbox(ownerUserId: string, me: { displayName: 
   const sid = sandbox.id;
   await check(db.from("matching_rules").insert({ sandbox_id: sid }));
 
-  // Venues: Hongdae has seats for two tables only, so a larger week raises a venue-shortage case.
+  // Venues: each Hongdae partner holds one table, so the week's fourth Hongdae table raises a venue-shortage case.
   const venues = await check(db.from("venues").select("name, region, address, price_band, rating").eq("sandbox_id", base.id));
   await check(db.from("venues").insert(venues.map((v) => ({ ...v, sandbox_id: sid, tables_available: v.region === "hongdae" ? 1 : 3 }))));
 
@@ -126,7 +126,18 @@ export async function createDemoSandbox(ownerUserId: string, me: { displayName: 
   await check(db.from("payments").insert(applications.map((a) => ({
     sandbox_id: sid, application_id: a.id, pass_id: a.pass_id, kind: "pay", amount: SINGLE_PRICE,
   }))));
+  // One person near the middle age wants Gangnam first with Hongdae as the second choice. Gangnam cannot
+  // fill a table of four, so matching visibly moves them to an open Hongdae seat (PRD 7.4 reassignment).
+  const [gangnamFirst] = applicants
+    .filter((p) => p.is_virtual && p.id !== failId)
+    .sort((a, b) => Math.abs(a.birth_year - medianYear) - Math.abs(b.birth_year - medianYear));
   const options = applications.flatMap((a, i) => {
+    if (a.profile_id === gangnamFirst?.id) {
+      return [
+        { sandbox_id: sid, application_id: a.id, event_slot_id: gangnam.id, priority: 1 },
+        { sandbox_id: sid, application_id: a.id, event_slot_id: hongdae.id, priority: 2 },
+      ];
+    }
     const rows = [{ sandbox_id: sid, application_id: a.id, event_slot_id: hongdae.id, priority: 1 }];
     if (i % 4 === 0) rows.push({ sandbox_id: sid, application_id: a.id, event_slot_id: gangnam.id, priority: 2 });
     return rows;

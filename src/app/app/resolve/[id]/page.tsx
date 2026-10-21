@@ -37,9 +37,11 @@ export default async function Resolve({ params, searchParams }: { params: Promis
       <Badge tone="plain"><Icon name="calendarX" size={14} />이번 회차 매칭 안 됨</Badge>
       <h1 className="mt-2.5 text-[24px] font-extrabold leading-snug tracking-[-0.03em]">이번 목요일엔 딱 맞는 식탁을 찾지 못했어요</h1>
       <p className="mt-2 text-[15px] leading-relaxed">{app.match_note}</p>
-      <p className="mt-3 flex items-start gap-2 rounded-btn bg-mist p-3.5 text-[15px] leading-relaxed">
-        <Icon name="shield" size={20} className="mt-0.5 shrink-0" />결제는 그대로 보관돼 있어요. 운영자 확인 없이 바로 처리돼요.
-      </p>
+      {failed && (
+        <p className="mt-3 flex items-start gap-2 rounded-btn bg-mist p-3.5 text-[15px] leading-relaxed">
+          <Icon name="shield" size={20} className="mt-0.5 shrink-0" />결제는 그대로 보관돼 있어요. 운영자 확인 없이 바로 처리돼요.
+        </p>
+      )}
 
       {app.match_status === "failed" ? (
         <form action={resolveFailedMatchAction} className="mt-6 flex flex-1 flex-col">

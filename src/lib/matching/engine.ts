@@ -363,6 +363,7 @@ function repair(group: Candidate[], relations: Relations, rules: Rules) {
 }
 
 function failureReason(candidate: Candidate, pool: Candidate[], rules: Rules) {
+  if (pool.length < MIN_SIZE) return `같은 날짜·지역을 고른 신청자가 ${MIN_SIZE}명이 안 됐어요.`;
   const sameAge = pool.filter((o) => o !== candidate && Math.abs(o.birthYear - candidate.birthYear) <= rules.maxAgeGap).length;
   if (sameAge + 1 < MIN_SIZE) return `같은 회차에 나이 조건(${rules.maxAgeGap}살 이내)이 맞는 신청자가 부족했어요.`;
   return "같은 회차에서 조건이 맞는 테이블을 만들지 못했어요.";

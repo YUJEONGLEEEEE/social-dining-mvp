@@ -53,13 +53,13 @@ type TableInfo = {
   venue_id: string | null;
   venues: { name: string; address: string | null } | null;
   event_slots: { region: string; starts_at: string; event_date: string };
-  table_members: { profile_id: string; left_at: string | null; profiles: { budget: string | null; interests: string[] } }[];
+  table_members: { profile_id: string; left_at: string | null; profiles: { budget: string | null; interests: string[]; is_virtual: boolean } }[];
 };
 
 async function loadTables(db: Db, sandboxId: string, filter: { runId?: string; tableId?: string; weekOf?: string }) {
   let query = db
     .from("dining_tables")
-    .select("id, score, reason, venue_id, venues(name, address), event_slots!inner(region, starts_at, event_date), table_members(profile_id, left_at, profiles(budget, interests))")
+    .select("id, score, reason, venue_id, venues(name, address), event_slots!inner(region, starts_at, event_date), table_members(profile_id, left_at, profiles(budget, interests, is_virtual))")
     .eq("sandbox_id", sandboxId)
     .eq("status", "confirmed");
   if (filter.runId) query = query.eq("match_run_id", filter.runId);
@@ -101,7 +101,9 @@ async function announceTable(db: Db, sandboxId: string, table: TableInfo, venue:
 /** Assigns a venue to every confirmed table of a run and announces it. */
 export async function assignVenues(sandboxId: string, runId: string, actor = "system") {
   const db = createAdminClient();
-  const tables = (await loadTables(db, sandboxId, { runId })).filter((t) => !t.venue_id).sort((a, b) => b.score - a.score);
+  // Higher scores pick first; in the demo a table with the visitor goes first so their walkthrough is never the shortage case.
+  const hasVisitor = (t: TableInfo) => (t.table_members.some((m) => !m.profiles.is_virtual) ? 1 : 0);
+  const tables = (await loadTables(db, sandboxId, { runId })).filter((t) => !t.venue_id).sort((a, b) => hasVisitor(b) - hasVisitor(a) || b.score - a.score);
   const { data: venues, error } = await db
     .from("venues")
     .select("id, name, address, region, price_band, rating, tables_available")
@@ -159,6 +161,14 @@ export async function assignVenues(sandboxId: string, runId: string, actor = "sy
       body: "함께할 분들이 정해졌어요. 식당을 확정하는 중이니 조금만 기다려 주세요.",
       dedupe_key: `table:${tableId}:venue_pending`,
     }]);
+    await sendNotifications(db, sandboxId, table.table_members.map((m) => ({
+      profile_id: m.profile_id,
+      type: "match_confirmed",
+      title: "이번 주 식탁이 정해졌어요",
+      body: "함께할 분들이 정해졌어요. 식당은 확정되는 대로 알려드릴게요.",
+      link: `/app/table/${tableId}`,
+      dedupe_key: `match_pending:${tableId}:${m.profile_id}`,
+    })));
   }
 
   await db.from("audit_logs").insert({
