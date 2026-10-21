@@ -31,12 +31,15 @@ export default async function Apply() {
 
   // The form opens only when this person has nothing upcoming: no application in an open week,
   // and no waiting or confirmed table whose dinner is still ahead.
-  const { data: mine } = await createAdminClient().from("applications").select("week_of, match_status, application_status")
+  const { data: mine } = await createAdminClient().from("applications").select("week_of, match_status, application_status, feedbacks(id)")
     .eq("sandbox_id", session.sandboxId).eq("profile_id", session.profileId).not("application_status", "in", "(cancelled,moved)");
   const openWeeks = new Set(open.map((s) => s.event_date));
   const clock = new Date(session.demoClock ?? STAGE_CLOCK.applied);
+  const fed = (a: { feedbacks: unknown }) => (Array.isArray(a.feedbacks) ? a.feedbacks.length > 0 : !!a.feedbacks);
   const busy = (mine ?? []).some((a) => openWeeks.has(a.week_of)
-    || (["waiting", "matching", "reassigning", "confirmed"].includes(a.match_status) && new Date(`${a.week_of}T21:00:00+09:00`) > clock));
+    || (["waiting", "matching", "reassigning", "confirmed"].includes(a.match_status) && new Date(`${a.week_of}T21:00:00+09:00`) > clock)
+    // Right after dinner the next step is feedback, not another application.
+    || (a.match_status === "confirmed" && session.stage === "finished" && !fed(a)));
   if (open.length && !busy) {
     const kept = await keptPass(session.sandboxId, session.profileId, session.demoClock);
     return (

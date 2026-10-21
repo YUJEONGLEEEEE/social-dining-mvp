@@ -29,7 +29,7 @@ export function ApplyForm({ slots, plans, kept }: { slots: Slot[]; plans: Plan[]
         </div>
         {slots.length > 1 && (
           <label className="mt-3 flex items-start gap-3 text-[15px] leading-relaxed">
-            <input type="checkbox" name="otherSlots" className="mt-1 size-5 accent-ink" />
+            <input type="checkbox" name="otherSlots" defaultChecked className="mt-1 size-5 accent-ink" />
             <span>같은 날 다른 지역도 괜찮아요. 첫 번째 지역에서 안 맞으면 자동으로 옮겨 드려요.</span>
           </label>
         )}

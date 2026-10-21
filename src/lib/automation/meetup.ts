@@ -219,7 +219,7 @@ export async function notifyFailures(sandboxId: string, weekOf: string) {
     profile_id: a.profile_id,
     type: "match_failed",
     title: "이번 주에는 딱 맞는 식탁을 찾지 못했어요",
-    body: `${a.match_note ?? ""} 다른 일정으로 옮기거나, 이용권으로 보관하거나, 환불받을 수 있어요.`.trim(),
+    body: `${a.match_note ?? ""} 다른 일정으로 옮기거나, 보관하거나, 환불받을 수 있어요. (멤버십은 기한 7일 연장)`.trim(),
     link: `/app/resolve/${a.id}`,
     dedupe_key: `match_failed:${a.id}`,
   })));

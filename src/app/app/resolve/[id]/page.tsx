@@ -39,7 +39,7 @@ export default async function Resolve({ params, searchParams }: { params: Promis
       <p className="mt-2 text-[15px] leading-relaxed">{app.match_note}</p>
       {failed && (
         <p className="mt-3 flex items-start gap-2 rounded-btn bg-mist p-3.5 text-[15px] leading-relaxed">
-          <Icon name="shield" size={20} className="mt-0.5 shrink-0" />결제는 그대로 보관돼 있어요. 운영자 확인 없이 바로 처리돼요.
+          <Icon name="shield" size={20} className="mt-0.5 shrink-0" />{membership ? "멤버십 기한이 7일 늘어났어요." : "결제는 그대로 보관돼 있어요."} 운영자 확인 없이 바로 처리돼요.
         </p>
       )}
 

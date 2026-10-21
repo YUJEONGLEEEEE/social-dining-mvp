@@ -25,9 +25,14 @@ export async function getOverview(session: DemoSession, weekOf: string) {
     .order("score", { ascending: false });
   const { data: exceptions } = await db
     .from("exception_cases")
-    .select("id, type, title, status, detail, table_id, retry_count, resolution, created_at")
+    .select("id, type, title, status, detail, table_id, retry_count, resolution, created_at, dining_tables(event_slots(event_date))")
     .eq("sandbox_id", sid)
     .order("created_at", { ascending: false });
+  // Each week shows its own cases; cases without a table (a failed run) show in every week.
+  const exceptionsThisWeek = (exceptions ?? []).filter((e) => {
+    const date = (e.dining_tables as unknown as { event_slots: { event_date: string } } | null)?.event_slots.event_date;
+    return !date || date === weekOf;
+  });
   const { data: venues } = await db.from("venues").select("id, name, region, rating, tables_available").eq("sandbox_id", sid).order("region");
   const { data: feedback } = await db.from("feedbacks")
     .select("rating, rating_mood, rating_talk, rating_venue, would_rejoin, would_recommend, dining_tables!inner(event_slots!inner(event_date))")
@@ -38,7 +43,7 @@ export async function getOverview(session: DemoSession, weekOf: string) {
   const paid = (apps ?? []).filter((a) => !["pending", "failed"].includes(a.payment_status)).length;
   const seated = (apps ?? []).filter((a) => a.match_status === "confirmed").length;
   const failed = (apps ?? []).filter((a) => a.match_status === "failed" || a.match_status === "resolved").length;
-  const open = (exceptions ?? []).filter((e) => e.status === "open");
+  const open = exceptionsThisWeek.filter((e) => e.status === "open");
   return {
     weekOf,
     run,
@@ -61,7 +66,7 @@ export async function getOverview(session: DemoSession, weekOf: string) {
       venues: { name: string } | null; event_slots: { event_date: string; region: string };
       table_members: { profile_id: string; left_at: string | null; profiles: { display_name: string; birth_year: number; gender: string } }[];
     }[],
-    exceptions: exceptions ?? [],
+    exceptions: exceptionsThisWeek,
     feedback: summarizeFeedback(feedback ?? []),
     venues: venues ?? [],
   };

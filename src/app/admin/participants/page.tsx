@@ -53,7 +53,7 @@ export default async function Participants() {
               <table className="w-full min-w-[760px] border-collapse text-[14px] tabular-nums">
                 <thead>
                   <tr className="border-b border-ink text-left text-graphite">
-                    {["이름", "지역", "이용권", "결제", "매칭", "참석", "피드백", "노쇼·제한"].map((h) => <th key={h} className="px-2.5 py-2 font-semibold">{h}</th>)}
+                    {["이름", "희망 지역(1순위)", "이용권", "결제", "매칭", "참석", "피드백", "노쇼·제한"].map((h) => <th key={h} className="px-2.5 py-2 font-semibold">{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>

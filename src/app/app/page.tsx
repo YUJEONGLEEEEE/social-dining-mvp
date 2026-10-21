@@ -100,7 +100,7 @@ export default async function AppHome() {
             <p className="mt-3 text-[15px] leading-relaxed">{application.match_note}</p>
             <p className="mt-3 flex items-start gap-2 rounded-btn bg-paper p-3.5 text-[15px] leading-relaxed">
               <Icon name="shield" size={20} className="mt-0.5 shrink-0" />
-              {status === "resolved" ? "선택하신 대로 처리했어요. 결과는 아래에서 볼 수 있어요." : "결제는 그대로 보관돼 있어요. 다른 일정으로 옮기거나, 보관하거나, 환불받을 수 있어요."}
+              {status === "resolved" ? "선택하신 대로 처리했어요. 결과는 아래에서 볼 수 있어요." : journey.pass && journey.pass.kind !== "single" ? "멤버십 기한이 7일 늘어났어요. 다른 일정으로 옮기거나 나중에 다시 신청할 수 있어요." : "결제는 그대로 보관돼 있어요. 다른 일정으로 옮기거나, 보관하거나, 환불받을 수 있어요."}
             </p>
             <Link href={`/app/resolve/${application.id}`} className="mt-4 flex h-[52px] items-center justify-center rounded-btn bg-ink font-semibold text-paper">
               {status === "resolved" ? "처리 결과 보기" : "다음 선택하기"}
