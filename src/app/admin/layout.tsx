@@ -15,12 +15,17 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     .eq("sandbox_id", session.sandboxId)
     .eq("status", "open");
   const next = NEXT_STEP[session.stage];
+  const { count: applied } = session.stage === "applied"
+    ? await createAdminClient().from("applications").select("id", { count: "exact", head: true }).eq("sandbox_id", session.sandboxId).eq("profile_id", session.meProfileId)
+    : { count: 1 };
   return (
     <div className="flex flex-1 flex-col bg-mist">
       <div className="flex flex-wrap items-center justify-between gap-2 bg-ink px-5 py-2.5 text-[14px] text-paper">
         <span><span className="font-bold">가상 시계</span> {session.demoClock ? dateTimeLabel(session.demoClock) : ""}</span>
         <div className="flex items-center gap-4">
-          {next && (
+          {!applied ? (
+            <Link href="/app/apply" className="rounded-full bg-honey px-3 py-1.5 font-bold text-ink">참가자 앱에서 먼저 신청하기 →</Link>
+          ) : next && (
             <form action={advanceDemoAction}>
               <input type="hidden" name="from" value={session.stage} />
               <input type="hidden" name="back" value="/admin" />

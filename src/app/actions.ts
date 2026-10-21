@@ -8,6 +8,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createDemoSandbox } from "@/lib/demo/sandbox";
 import { STAGES, advanceDemo, type Stage } from "@/lib/demo/clock";
 import { resolveFailedMatch, type ResolveChoice } from "@/lib/participant/resolve";
+import { PASS_PLANS, submitApplication, type PassKind } from "@/lib/participant/apply";
 import { submitFeedback, type PersonChoice } from "@/lib/feedback/loop";
 import { resolveVenueShortage } from "@/lib/automation/meetup";
 import { PERSONA_COOKIE, getDemoSession, requireDemoSession, type Persona } from "@/lib/auth/session";
@@ -91,6 +92,27 @@ export async function saveProfile(_: ProfileFormState, formData: FormData): Prom
     .eq("id", session.meProfileId)
     .eq("sandbox_id", session.sandboxId);
   if (error) return { error: "저장하지 못했어요. 잠시 후 다시 시도해 주세요." };
+  // First visit goes on to apply; later edits return home.
+  const { count } = await createAdminClient().from("applications").select("id", { count: "exact", head: true })
+    .eq("sandbox_id", session.sandboxId).eq("profile_id", session.meProfileId);
+  redirect(count ? "/app" : "/app/apply");
+}
+
+export type ApplyState = { error?: string };
+
+/** 신청 + 모의 결제 (PRD completion condition 1). Slots and the plan are checked on the server. */
+export async function applyAction(_: ApplyState, formData: FormData): Promise<ApplyState> {
+  const session = await requireDemoSession();
+  if (session.persona !== "me") return { error: "내 시점에서만 신청할 수 있어요." };
+  const passKind = String(formData.get("pass") ?? "");
+  if (!(passKind in PASS_PLANS)) return { error: "이용권을 골라 주세요." };
+  if (formData.get("agree") !== "on") return { error: "환불·취소 규정에 동의해 주세요." };
+  const result = await submitApplication(
+    session.sandboxId, session.meProfileId, session.demoClock ?? new Date().toISOString(),
+    String(formData.get("slot") ?? ""), formData.get("otherSlots") === "on", passKind as PassKind,
+  );
+  if ("error" in result) return { error: result.error };
+  revalidatePath("/", "layout");
   redirect("/app");
 }
 

@@ -3,16 +3,17 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getJourney } from "@/lib/participant/journey";
 import { REGION_LABEL } from "@/lib/profile-options";
 import { dateLabel, dateTimeLabel, timeLabel, won } from "@/lib/format";
+import { PASS_PLANS } from "@/lib/participant/apply";
+import { ApplyForm } from "./apply-form";
 
 const PAYMENT_LABEL: Record<string, string> = {
   pending: "결제 대기", paid: "결제 완료", refund_requested: "환불 처리 중", refunded: "환불 완료", pass_kept: "이용권으로 보관", failed: "결제 실패",
 };
-const PASSES = [
-  { name: "1회권", price: 9900, note: "한 번 참여" },
-  { name: "멤버십 1개월", price: 35000, note: "기간 내 매주 참여, 매칭 실패 시 기한 7일 연장" },
-  { name: "멤버십 3개월", price: 75000, note: "" },
-  { name: "멤버십 6개월", price: 120000, note: "" },
-];
+const NOTES: Record<string, string> = {
+  single: "한 번 참여",
+  membership_1m: "기간 내 매주 참여, 매칭 실패 시 기한 7일 연장",
+};
+const PASSES = Object.entries(PASS_PLANS).map(([kind, p]) => ({ kind, name: p.name, price: p.price, note: NOTES[kind] ?? "" }));
 
 export default async function Apply() {
   const session = await requireDemoSession();
@@ -22,8 +23,23 @@ export default async function Apply() {
     .select("id, event_date, region, starts_at, match_deadline_at, status")
     .eq("sandbox_id", session.sandboxId)
     .eq("is_history", false)
-    .order("event_date");
+    .order("event_date")
+    .order("region", { ascending: false }); // 홍대 first: most demo applicants chose it
   const chosen = new Set(journey.slots.map((s) => s.id));
+  const open = (slots ?? []).filter((s) => session.demoClock && s.match_deadline_at > new Date(session.demoClock).toISOString());
+
+  if (!journey.application && session.persona === "me" && open.length) {
+    return (
+      <main className="px-5 pb-10 pt-6">
+        <h1 className="text-[24px] font-extrabold tracking-[-0.03em]">이번 주 식탁 신청</h1>
+        <p className="mt-1 text-[15px] text-graphite">날짜·지역과 이용권을 고르고 결제하면 신청이 끝나요. 매칭 마감에 자동으로 식탁이 정해져요.</p>
+        <ApplyForm
+          slots={open.map((s) => ({ id: s.id, title: `${dateLabel(s.starts_at)} ${timeLabel(s.starts_at)} · ${REGION_LABEL[s.region]}`, deadline: dateTimeLabel(s.match_deadline_at) }))}
+          plans={PASSES}
+        />
+      </main>
+    );
+  }
 
   return (
     <main className="px-5 pt-6">
@@ -47,7 +63,7 @@ export default async function Apply() {
         <section className="mt-6 rounded-card bg-mist p-5 text-[15px]">
           <h2 className="font-bold">내 신청</h2>
           <dl className="mt-2 space-y-1.5">
-            <div className="flex justify-between"><dt className="text-graphite">이용권</dt><dd>1회권 · {won(journey.pass?.price ?? 9900)}</dd></div>
+            <div className="flex justify-between"><dt className="text-graphite">이용권</dt><dd>{PASS_PLANS[journey.pass?.kind as keyof typeof PASS_PLANS]?.name ?? "1회권"} · {won(journey.pass?.price ?? 9900)}</dd></div>
             <div className="flex justify-between"><dt className="text-graphite">결제 상태</dt><dd className="font-bold">{PAYMENT_LABEL[journey.application.payment_status]}</dd></div>
             <div className="flex justify-between"><dt className="text-graphite">결제 방식</dt><dd>모의 결제 (해커톤 허용 범위)</dd></div>
           </dl>
