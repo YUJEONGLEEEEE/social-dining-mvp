@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { REGION_LABEL } from "@/lib/profile-options";
 import { dateLabel } from "@/lib/format";
 import { signOut } from "../../actions";
+import { IconList, POLICY } from "@/components/ui";
 
 const MATCH_LABEL: Record<string, string> = {
   waiting: "매칭 대기", matching: "매칭 중", reassigning: "재배치 중", confirmed: "매칭 확정", failed: "매칭 안 됨", resolved: "처리 완료",
@@ -61,9 +62,16 @@ export default async function My() {
         </ul>
       </section>
 
-      <section className="mt-4 rounded-card bg-mist p-5 text-[14px] leading-relaxed text-graphite">
-        <h2 className="text-[15px] font-bold text-ink">운영 정책</h2>
-        <p className="mt-1">화요일 24시(매칭 마감) 이후 환불 불가 · 당일 취소 환불 없음, 경고 1회 · 노쇼 2회 시 4주 신청 제한 · 매칭이 안 되면 일정 이동·이용권 보관·환불 중 선택 · 멤버십은 실패 1회마다 기한 7일 연장</p>
+      <section className="mt-4 rounded-card bg-mist p-5">
+        <h2 className="text-[15px] font-bold">운영 정책</h2>
+        <IconList
+          className="mt-3"
+          items={[
+            ...POLICY,
+            { icon: "refresh", text: "매칭이 안 되면 일정 이동·이용권 보관·환불 중 선택" },
+            { icon: "star", text: "멤버십은 매칭 실패 1회마다 기한 7일 연장" },
+          ]}
+        />
       </section>
 
       <form action={signOut} className="py-6">
