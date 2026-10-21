@@ -6,8 +6,8 @@ import { compareFeedbackEffect, hasFeedback } from "@/lib/feedback/loop";
 import { REGION_LABEL } from "@/lib/profile-options";
 import { dateLabel, dateTimeLabel, durationLabel, timeLabel } from "@/lib/format";
 import { PASS_PLANS } from "@/lib/participant/apply";
-import { Badge } from "@/components/ui";
-import { Icon } from "@/components/icons";
+import { Badge, IconList, POLICY } from "@/components/ui";
+import { Icon, type IconName } from "@/components/icons";
 
 export default async function AppHome() {
   const session = await requireDemoSession();
@@ -84,8 +84,9 @@ export default async function AppHome() {
                 <span className="flex items-center gap-1"><Icon name="users" size={16} />{table.members.length}명</span>
               </p>
               <h2 className="mt-5 text-[15px] font-bold">함께하게 된 이유</h2>
-              <p className="mt-1 text-[15px] leading-relaxed">{table.reason}</p>
-              {table.myReason && <p className="mt-2 text-[14px] text-graphite">나와 맞는 점 · {table.myReason}</p>}
+              <div className="mt-2 rounded-btn bg-paper p-4">
+                <IconList items={reasonItems(table.reason, table.myReason)} />
+              </div>
               <StageAction stage={session.stage} tableId={table.id} feedbackDone={journey.feedbackDone} />
             </div>
           </section>
@@ -111,9 +112,9 @@ export default async function AppHome() {
 
       {effect && <FeedbackEffect effect={effect} />}
 
-      <section className="mt-4 rounded-card bg-mist p-5 text-[15px] leading-relaxed">
-        <h2 className="font-bold">환불·취소 규정</h2>
-        <p className="mt-1 text-graphite">화요일 24시(매칭 마감) 전까지 전액 환불. 이후와 당일 취소는 환불되지 않아요. 노쇼 2회가 쌓이면 4주간 신청이 제한돼요.</p>
+      <section className="mt-4 rounded-card bg-mist p-5">
+        <h2 className="text-[15px] font-bold">환불·취소 규정</h2>
+        <IconList items={POLICY} className="mt-3" />
       </section>
     </main>
   );
@@ -179,4 +180,17 @@ function StageAction({ stage, tableId, feedbackDone }: { stage: string; tableId:
   if (stage === "finished" && !feedbackDone) return <Link href={`/app/feedback/${tableId}`} className={button}>오늘 식탁 피드백 남기기</Link>;
   if (stage === "dining") return <Link href={`/app/table/${tableId}`} className={button}>체크인하고 대화 카드 보기</Link>;
   return <Link href={`/app/table/${tableId}`} className={button}>단체방 열기</Link>;
+}
+
+const REASON_ICONS = ["heart", "users", "chatDots"] as const;
+
+/** The table's reason sentences and what this person shares with it, one scannable line each. */
+function reasonItems(reason: string | null, mine: string | null) {
+  const sentences = (reason ?? "").split(/(?<=요\.)\s+/).filter(Boolean);
+  const items: { icon: IconName; text: React.ReactNode }[] = sentences.map((text, i) => ({ icon: REASON_ICONS[i % REASON_ICONS.length], text }));
+  // "공통 관심사: … · 원하는 상대: …" becomes its own bold line.
+  for (const part of (mine ?? "").split(" · ").filter(Boolean)) {
+    items.push({ icon: "check", text: <span className="font-semibold">{part}</span> });
+  }
+  return items;
 }
