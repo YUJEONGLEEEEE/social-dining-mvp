@@ -22,7 +22,7 @@ export async function getMyTable(session: DemoSession, tableId: string) {
 
   const { data: table } = await db
     .from("dining_tables")
-    .select("id, reason, venues(name, address), event_slots(starts_at, region), table_members(profile_id, left_at, profiles(display_name, birth_year, mbti))")
+    .select("id, reason, venues(name, address, price_band, rating), event_slots(starts_at, region), table_members(profile_id, left_at, profiles(display_name, birth_year, mbti))")
     .eq("id", tableId)
     .single();
   const { data: messages } = await db
@@ -32,7 +32,7 @@ export async function getMyTable(session: DemoSession, tableId: string) {
     .order("created_at");
   return {
     table: table as unknown as {
-      id: string; reason: string | null; venues: { name: string; address: string | null } | null;
+      id: string; reason: string | null; venues: { name: string; address: string | null; price_band: string | null; rating: number | null } | null;
       event_slots: { starts_at: string; region: string };
       table_members: { profile_id: string; left_at: string | null; profiles: { display_name: string; birth_year: number; mbti: string | null } }[];
     },

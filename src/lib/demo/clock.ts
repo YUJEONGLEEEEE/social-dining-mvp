@@ -75,8 +75,11 @@ async function runStep(sandboxId: string, from: Stage, actor: string) {
   }
   if (from === "reminded") {
     await postConversationCards(sandboxId, DEMO_WEEK);
-    await db.from("applications").update({ attendance_status: "checked_in", checked_in_at: STAGE_CLOCK.dining })
-      .eq("sandbox_id", sandboxId).eq("week_of", DEMO_WEEK).eq("match_status", "confirmed");
+    // Virtual tablemates arrive on their own; the visitor checks in with the button in the group chat.
+    const { data: virtual } = await db.from("applications").select("id, profiles!inner(is_virtual)")
+      .eq("sandbox_id", sandboxId).eq("week_of", DEMO_WEEK).eq("match_status", "confirmed").eq("profiles.is_virtual", true);
+    const ids = (virtual ?? []).map((a) => a.id);
+    if (ids.length) await db.from("applications").update({ attendance_status: "checked_in", checked_in_at: STAGE_CLOCK.dining }).in("id", ids);
   }
   if (from === "dining") {
     await requestFeedback(sandboxId, DEMO_WEEK);

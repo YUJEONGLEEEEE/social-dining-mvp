@@ -175,6 +175,6 @@ function StageAction({ stage, tableId, feedbackDone }: { stage: string; tableId:
   const button = "mt-5 flex h-[52px] items-center justify-center rounded-btn bg-ink font-semibold text-paper";
   if (stage === "finished" && feedbackDone) return <p className="mt-5 rounded-btn bg-paper p-4 text-[15px] font-bold">피드백을 보냈어요. 위의 데모 바로 다음 회차 매칭을 실행해 보세요.</p>;
   if (stage === "finished" && !feedbackDone) return <Link href={`/app/feedback/${tableId}`} className={button}>오늘 식탁 피드백 남기기</Link>;
-  if (stage === "dining") return <Link href={`/app/table/${tableId}`} className={button}>대화 카드 보기</Link>;
+  if (stage === "dining") return <Link href={`/app/table/${tableId}`} className={button}>체크인하고 대화 카드 보기</Link>;
   return <Link href={`/app/table/${tableId}`} className={button}>단체방 열기</Link>;
 }

@@ -34,7 +34,7 @@ export default async function Apply() {
       .in("week_of", [...new Set(open.map((s) => s.event_date))]).not("application_status", "in", "(cancelled,moved)").limit(1)
     : { data: [] };
   if (open.length && !active?.length) {
-    const kept = await keptPass(session.sandboxId, session.profileId);
+    const kept = await keptPass(session.sandboxId, session.profileId, session.demoClock);
     return (
       <main className="px-5 pb-10 pt-6">
         <h1 className="text-[24px] font-extrabold tracking-[-0.03em]">이번 주 식탁 신청</h1>
@@ -42,7 +42,7 @@ export default async function Apply() {
         <ApplyForm
           slots={open.map((s) => ({ id: s.id, title: `${dateLabel(s.starts_at)} ${timeLabel(s.starts_at)} · ${REGION_LABEL[s.region]}`, deadline: dateTimeLabel(s.match_deadline_at) }))}
           plans={PASSES}
-          kept={!!kept}
+          kept={kept ? (kept.kind === "single" ? "single" : "membership") : null}
         />
       </main>
     );

@@ -10,7 +10,7 @@ import { STAGES, advanceDemo, type Stage } from "@/lib/demo/clock";
 import { resolveFailedMatch, type ResolveChoice } from "@/lib/participant/resolve";
 import { mealIsOver } from "@/lib/participant/table";
 import { PASS_PLANS, submitApplication, type PassKind } from "@/lib/participant/apply";
-import { submitFeedback, type PersonChoice } from "@/lib/feedback/loop";
+import { submitFeedback, type Intent, type PersonChoice } from "@/lib/feedback/loop";
 import { resolveVenueShortage } from "@/lib/automation/meetup";
 import { PERSONA_COOKIE, getDemoSession, requireDemoSession, type Persona } from "@/lib/auth/session";
 import { BUDGETS, INTERESTS, MBTI_TYPES, PERSONALITY, WANTS } from "@/lib/profile-options";
@@ -187,6 +187,26 @@ export async function confirmAttendance(formData: FormData) {
   redirect(`/app/table/${tableId}`);
 }
 
+/** Check-in at the restaurant (FDB-01). Open from the start of the meal until it ends. */
+export async function checkInAction(formData: FormData) {
+  const session = await requireDemoSession();
+  const tableId = String(formData.get("tableId") ?? "");
+  if (!UUID.test(tableId)) redirect("/app");
+  const db = createAdminClient();
+  const { data: seat } = await db.from("table_members").select("application_id, dining_tables(event_slots(starts_at))")
+    .eq("sandbox_id", session.sandboxId).eq("table_id", tableId).eq("profile_id", session.profileId).is("left_at", null).maybeSingle();
+  const startsAt = (seat?.dining_tables as unknown as { event_slots: { starts_at: string } } | null)?.event_slots.starts_at;
+  const now = session.demoClock;
+  if (!seat || !startsAt || !now || new Date(now) < new Date(startsAt) || mealIsOver(startsAt, now)) redirect(`/app/table/${tableId}`);
+  const { data: updated } = await db.from("applications").update({ attendance_status: "checked_in", checked_in_at: now })
+    .eq("id", seat.application_id).neq("attendance_status", "checked_in").select("id");
+  if (updated?.length) {
+    await db.from("audit_logs").insert({ sandbox_id: session.sandboxId, entity: "application", entity_id: seat.application_id, actor: "participant", action: "check_in" });
+  }
+  revalidatePath("/", "layout");
+  redirect(`/app/table/${tableId}`);
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** Failed match: move to another date, keep the pass, or refund (STA-04~06, PAY-03). */
@@ -217,6 +237,16 @@ export async function submitFeedbackAction(_: FeedbackState, formData: FormData)
   const rating = Number(formData.get("rating"));
   if (!Number.isInteger(rating) || rating < 1 || rating > 5) return { error: "오늘 식탁 만족도를 골라 주세요." };
   const comment = String(formData.get("comment") ?? "").slice(0, 1000);
+  const score = (key: string) => {
+    const n = Number(formData.get(key));
+    return Number.isInteger(n) && n >= 1 && n <= 5 ? n : undefined;
+  };
+  const intent = (key: string): Intent | undefined => {
+    const v = formData.get(key);
+    return v === "yes" || v === "maybe" || v === "no" ? v : undefined;
+  };
+  const detail = { mood: score("mood"), talk: score("talk"), venue: score("venue"), rejoin: intent("rejoin"), recommend: intent("recommend") };
+  if (!detail.mood || !detail.talk || !detail.venue || !detail.rejoin || !detail.recommend) return { error: "분위기·대화·식당 점수와 재참여·추천 의향을 골라 주세요." };
 
   const db = createAdminClient();
   const { data: seat } = await db.from("table_members").select("application_id")
@@ -234,7 +264,7 @@ export async function submitFeedbackAction(_: FeedbackState, formData: FormData)
   }
   let result: Awaited<ReturnType<typeof submitFeedback>>;
   try {
-    result = await submitFeedback(session.sandboxId, seat.application_id, { rating, comment, choices }, "participant");
+    result = await submitFeedback(session.sandboxId, seat.application_id, { rating, comment, choices, detail }, "participant");
   } catch {
     return { error: "저장하지 못했어요. 잠시 후 다시 시도해 주세요." };
   }
@@ -272,20 +302,67 @@ export async function resolveVenueShortageAction(formData: FormData) {
   redirect("/admin");
 }
 
-/** Operator: close a safety report after review (the pair stays blocked). */
+/** Operator: close a case after review; for a report, optionally sanction the reported person (SAF-02). The pair stays blocked. */
 export async function closeExceptionAction(formData: FormData) {
   const session = await requireDemoSession();
   const exceptionId = String(formData.get("exceptionId") ?? "");
   const note = String(formData.get("note") ?? "").trim().slice(0, 300) || "운영자 확인 완료";
   if (!UUID.test(exceptionId)) redirect("/admin");
+  const sanction = String(formData.get("sanction") ?? "none");
+  if (!SANCTIONS[sanction]) redirect("/admin");
   const db = createAdminClient();
-  const { data: ex } = await db.from("exception_cases").select("id, status").eq("sandbox_id", session.sandboxId).eq("id", exceptionId).maybeSingle();
-  if (ex?.status === "open") {
-    await db.from("exception_cases").update({ status: "resolved", resolution: note, resolved_at: new Date().toISOString() }).eq("id", ex.id);
-    await db.from("audit_logs").insert({ sandbox_id: session.sandboxId, entity: "exception_case", entity_id: ex.id, actor: "operator", action: "close_exception", before: { status: "open" }, after: { status: "resolved" }, reason: note });
+  const { data: ex } = await db.from("exception_cases").select("id, status, type, detail").eq("sandbox_id", session.sandboxId).eq("id", exceptionId).maybeSingle();
+  if (!ex) redirect("/admin");
+  const { data: closed } = await db.from("exception_cases")
+    .update({ status: "resolved", resolution: `${SANCTIONS[sanction].label} · ${note}`, resolved_at: new Date().toISOString() })
+    .eq("id", ex.id).eq("status", "open").select("id");
+  if (closed?.length) {
+    // SAF-02: a sanction on the reported person. Restrictions block new applications until the date.
+    const reported = (ex.detail as { reported?: string } | null)?.reported;
+    const days = SANCTIONS[sanction].days;
+    if (ex.type === "safety_report" && reported && days) {
+      const until = new Date(new Date(session.demoClock ?? Date.now()).getTime() + days * 86_400_000).toISOString();
+      await db.from("profiles").update({ restricted_until: until }).eq("id", reported).eq("sandbox_id", session.sandboxId);
+    }
+    await db.from("audit_logs").insert({
+      sandbox_id: session.sandboxId, entity: "exception_case", entity_id: ex.id, actor: "operator", action: "close_exception",
+      before: { status: "open" }, after: { status: "resolved", sanction, reported: reported ?? null }, reason: note,
+    });
   }
   revalidatePath("/", "layout");
   redirect("/admin");
+}
+
+const SANCTIONS: Record<string, { label: string; days: number }> = {
+  none: { label: "조치 없음", days: 0 },
+  warn: { label: "경고", days: 0 },
+  restrict: { label: "4주 신청 제한", days: 28 },
+  ban: { label: "영구 이용 제한", days: 36500 },
+};
+
+/** Operator: confirm a no-show candidate (checked in nowhere). Two no-shows mean four weeks without applying. */
+export async function confirmNoShowAction(formData: FormData) {
+  const session = await requireDemoSession();
+  const applicationId = String(formData.get("applicationId") ?? "");
+  if (!UUID.test(applicationId)) redirect("/admin/participants");
+  const db = createAdminClient();
+  const { data: app } = await db.from("applications").select("id, profile_id, match_status, attendance_status, profiles(no_show_count), table_members(dining_tables(event_slots(starts_at)))")
+    .eq("sandbox_id", session.sandboxId).eq("id", applicationId).maybeSingle();
+  const startsAt = (app?.table_members as unknown as { dining_tables: { event_slots: { starts_at: string } } }[] | undefined)?.[0]?.dining_tables.event_slots.starts_at;
+  // Only after the meal is over, and only for someone who never checked in.
+  if (!app || app.match_status !== "confirmed" || app.attendance_status === "checked_in" || !startsAt || !mealIsOver(startsAt, session.demoClock)) redirect("/admin/participants");
+  const { data: marked } = await db.from("applications").update({ attendance_status: "no_show" }).eq("id", app.id).neq("attendance_status", "no_show").select("id");
+  if (marked?.length) {
+    const count = ((app.profiles as unknown as { no_show_count: number } | null)?.no_show_count ?? 0) + 1;
+    const restrictedUntil = count >= 2 ? new Date(new Date(session.demoClock ?? Date.now()).getTime() + 28 * 86_400_000).toISOString() : null;
+    await db.from("profiles").update({ no_show_count: count, ...(restrictedUntil ? { restricted_until: restrictedUntil } : {}) }).eq("id", app.profile_id);
+    await db.from("audit_logs").insert({
+      sandbox_id: session.sandboxId, entity: "application", entity_id: app.id, actor: "operator", action: "confirm_no_show",
+      after: { no_show_count: count, restricted_until: restrictedUntil },
+    });
+  }
+  revalidatePath("/", "layout");
+  redirect("/admin/participants");
 }
 
 export type RulesState = { error?: string; saved?: boolean };
