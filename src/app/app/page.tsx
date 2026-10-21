@@ -96,15 +96,16 @@ export default async function AppHome() {
       {application && (status === "failed" || status === "resolved") && (
         <>
           <Hello name={name} line="이번 주 매칭 결과를 알려드려요" title={"이번 목요일엔\n딱 맞는 식탁을 찾지 못했어요"} />
-          <section className="rounded-card bg-mist p-5">
-            <Badge tone="plain"><Icon name="calendarX" size={14} />이번 회차 매칭 안 됨</Badge>
+          {/* A soft warm tint (not alarm red) so a failed week reads differently from a confirmed one at a glance. */}
+          <section className={`rounded-card p-5 ${status === "failed" ? "bg-danger-soft" : "bg-mist"}`}>
+            <span className="inline-flex items-center gap-1 rounded-full bg-paper px-2.5 py-1 text-[13px] font-bold text-danger"><Icon name="calendarX" size={14} />이번 회차 매칭 안 됨</span>
             <p className="mt-3 text-[15px] leading-relaxed">{application.match_note}</p>
             <p className="mt-3 flex items-start gap-2 rounded-btn bg-paper p-3.5 text-[15px] leading-relaxed">
               <Icon name="shield" size={20} className="mt-0.5 shrink-0" />
               {status === "resolved" ? "선택하신 대로 처리했어요. 결과는 아래에서 볼 수 있어요." : journey.pass && journey.pass.kind !== "single" ? "멤버십 기한이 7일 늘어났어요. 다른 일정으로 옮기거나 나중에 다시 신청할 수 있어요." : "결제는 그대로 보관돼 있어요. 다른 일정으로 옮기거나, 보관하거나, 환불받을 수 있어요."}
             </p>
             <Link href={`/app/resolve/${application.id}`} className="mt-4 flex h-[52px] items-center justify-center rounded-btn bg-ink font-semibold text-paper">
-              {status === "resolved" ? "처리 결과 보기" : "다음 선택하기"}
+              {status === "resolved" ? "처리 결과 보기" : "다른 일정으로 다시 매칭하기 · 보관 · 환불"}
             </Link>
           </section>
         </>

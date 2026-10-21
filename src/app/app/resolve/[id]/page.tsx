@@ -34,7 +34,7 @@ export default async function Resolve({ params, searchParams }: { params: Promis
   return (
     <main className="flex flex-1 flex-col px-5 pt-4">
       <Link href="/app" aria-label="홈으로" className="py-2"><Icon name="arrowLeft" /></Link>
-      <Badge tone="plain"><Icon name="calendarX" size={14} />이번 회차 매칭 안 됨</Badge>
+      <Badge tone="danger"><Icon name="calendarX" size={14} />이번 회차 매칭 안 됨</Badge>
       <h1 className="mt-2.5 text-[24px] font-extrabold leading-snug tracking-[-0.03em]">이번 목요일엔 딱 맞는 식탁을 찾지 못했어요</h1>
       <p className="mt-2 text-[15px] leading-relaxed">{app.match_note}</p>
       {failed && (
