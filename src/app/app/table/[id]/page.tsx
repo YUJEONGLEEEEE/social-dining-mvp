@@ -92,7 +92,7 @@ export default async function TableRoom({ params }: { params: Promise<{ id: stri
           <button className="h-[52px] w-full rounded-btn bg-ink font-semibold text-paper">참석할게요</button>
         </form>
       )}
-      {attendance === "confirmed" && <p className="px-4 pt-3 text-[15px] font-bold">참석 확인 완료 · 내일 만나요</p>}
+      {session.stage === "reminded" && attendance === "confirmed" && <p className="px-4 pt-3 text-[15px] font-bold">참석 확인 완료 · 내일 만나요</p>}
       {session.stage === "dining" && attendance !== "checked_in" && (
         <form action={checkInAction} className="px-4 pt-3">
           <input type="hidden" name="tableId" value={table.id} />

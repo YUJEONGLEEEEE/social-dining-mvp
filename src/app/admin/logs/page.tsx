@@ -17,12 +17,13 @@ const ACTION: Record<string, string> = {
   apply_and_pay: "신청·모의 결제",
   apply_with_kept_pass: "보관 이용권으로 신청",
   check_in: "체크인",
+  confirm_no_show: "노쇼 확정",
 };
 const ACTOR: Record<string, string> = {
   system: "시스템", operator: "운영자", participant: "참가자", "demo-visitor": "데모 진행", "test-account": "데모 진행", "demo-simulation": "가상 참가자",
 };
 const TYPE: Record<string, string> = {
-  match_confirmed: "확정 안내", match_failed: "매칭 실패 안내", reminder: "D-1 리마인드", feedback_request: "피드백 요청", match_resolved: "실패 처리 결과",
+  match_confirmed: "확정 안내", match_failed: "매칭 실패 안내", reminder: "D-1 리마인드", feedback_request: "피드백 요청", match_resolved: "실패 처리 결과", application_paid: "신청·결제 완료",
 };
 
 export default async function Logs() {

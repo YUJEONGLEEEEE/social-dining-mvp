@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireDemoSession } from "@/lib/auth/session";
 import { getJourney } from "@/lib/participant/journey";
-import { compareFeedbackEffect } from "@/lib/feedback/loop";
+import { compareFeedbackEffect, hasFeedback } from "@/lib/feedback/loop";
 import { REGION_LABEL } from "@/lib/profile-options";
 import { dateLabel, dateTimeLabel, durationLabel, timeLabel } from "@/lib/format";
 import { PASS_PLANS } from "@/lib/participant/apply";
@@ -18,7 +18,9 @@ export default async function AppHome() {
   const name = journey.profile?.display_name ?? "";
   const status = application?.match_status;
   const slot = slots[0];
-  const effect = session.stage === "next_matched" && session.persona === "me" && status === "confirmed"
+  // The before/after comparison only makes sense for someone who sat down last week and left feedback.
+  const effect = session.stage === "next_matched" && session.persona === "me" && status === "confirmed" && application?.week_of === "2026-10-29"
+    && (await hasFeedback(session.sandboxId, session.profileId, "2026-10-22"))
     ? await compareFeedbackEffect(session.sandboxId, "2026-10-29", session.profileId)
     : null;
 
@@ -60,7 +62,7 @@ export default async function AppHome() {
             <dl className="mt-4 space-y-1.5 text-[15px]">
               <Row label="일정" value={`${dateLabel(slot.starts_at)} ${timeLabel(slot.starts_at)}`} />
               <Row label="지역" value={slots.map((s) => REGION_LABEL[s.region]).join(" → ") + (slots.length > 1 ? " (재배치 후보 포함)" : "")} />
-              <Row label="결제" value={application.payment_status === "paid" ? `${PASS_PLANS[journey.pass?.kind as keyof typeof PASS_PLANS]?.name ?? "1회권"} 결제 완료` : "결제 대기"} />
+              <Row label="결제" value={application.payment_status !== "paid" ? "결제 대기" : journey.pass ? `${PASS_PLANS[journey.pass.kind as keyof typeof PASS_PLANS]?.name} 결제 완료` : "데모 자동 신청"} />
             </dl>
           </section>
         </>
@@ -70,7 +72,7 @@ export default async function AppHome() {
         <>
           <Hello
             name={name}
-            line={session.stage === "next_matched" ? "다음 주 식탁도 정해졌어요" : "이번 주 식탁이 정해졌어요"}
+            line={effect ? "다음 주 식탁도 정해졌어요" : "식탁이 정해졌어요"}
             title={`${dateLabel(table.startsAt).replace(/ \(.\)/, "")} 저녁,\n${table.members.length - 1}명과 함께해요`}
           />
           <section className="overflow-hidden rounded-card bg-mist">
@@ -98,7 +100,7 @@ export default async function AppHome() {
             <p className="mt-3 text-[15px] leading-relaxed">{application.match_note}</p>
             <p className="mt-3 flex items-start gap-2 rounded-btn bg-paper p-3.5 text-[15px] leading-relaxed">
               <Icon name="shield" size={20} className="mt-0.5 shrink-0" />
-              결제는 그대로 보관돼 있어요. 다른 일정으로 옮기거나, 이용권으로 보관하거나, 환불받을 수 있어요.
+              {status === "resolved" ? "선택하신 대로 처리했어요. 결과는 아래에서 볼 수 있어요." : "결제는 그대로 보관돼 있어요. 다른 일정으로 옮기거나, 보관하거나, 환불받을 수 있어요."}
             </p>
             <Link href={`/app/resolve/${application.id}`} className="mt-4 flex h-[52px] items-center justify-center rounded-btn bg-ink font-semibold text-paper">
               {status === "resolved" ? "처리 결과 보기" : "다음 선택하기"}

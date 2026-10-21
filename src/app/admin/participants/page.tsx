@@ -82,7 +82,11 @@ export default async function Participants() {
                         </td>
                         <td className="px-2.5 py-2.5">{fb ? "제출" : "-"}</td>
                         <td className="px-2.5 py-2.5">
-                          {r.profiles.no_show_count}회{restricted ? <span className="ml-1 font-bold text-danger">· {dateLabel(r.profiles.restricted_until!)}까지 제한</span> : ""}
+                          {r.profiles.no_show_count}회{restricted ? (
+                            <span className="ml-1 font-bold text-danger">
+                              · {new Date(r.profiles.restricted_until!).getFullYear() > 2100 ? "영구 제한" : `${dateLabel(r.profiles.restricted_until!)}까지 제한`}
+                            </span>
+                          ) : ""}
                         </td>
                       </tr>
                     );

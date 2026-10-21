@@ -1,5 +1,6 @@
 import { requireDemoSession } from "@/lib/auth/session";
-import { currentWeek, getOverview } from "@/lib/admin/overview";
+import { currentWeek, getOverview, weeksSoFar } from "@/lib/admin/overview";
+import { WeekTabs } from "./week-tabs";
 import { REGION_LABEL } from "@/lib/profile-options";
 import { dateLabel } from "@/lib/format";
 import { Icon } from "@/components/icons";
@@ -14,15 +15,16 @@ const TYPE_LABEL: Record<string, string> = {
   other: "기타",
 };
 
-export default async function AdminDashboard({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
-  const { error } = await searchParams;
+export default async function AdminDashboard({ searchParams }: { searchParams: Promise<{ error?: string; week?: string }> }) {
+  const { error, week } = await searchParams;
   const session = await requireDemoSession();
-  const o = await getOverview(session, currentWeek(session));
+  const o = await getOverview(session, currentWeek(session, week));
   const open = o.exceptions.filter((e) => e.status === "open");
   const resolved = o.exceptions.filter((e) => e.status === "resolved");
 
   return (
     <main>
+      <WeekTabs weeks={weeksSoFar(session)} current={o.weekOf} path="/admin" />
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h1 className="text-[22px] font-extrabold tracking-[-0.03em]">{dateLabel(`${o.weekOf}T10:00:00Z`)} 회차</h1>
         <p className="text-[14px] text-graphite">
@@ -33,8 +35,13 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
       <section aria-label="현황" className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Kpi label="결제 완료" value={`${o.kpi.paid}명`} />
         <Kpi label="자동 확정 테이블" value={`${o.kpi.tables}개`} />
-        <Kpi label="자동 확정률" value={`${o.kpi.autoRate}%`} note={`${o.kpi.seated}명 배정 · ${o.kpi.failed}명 실패`} />
+        <Kpi label="매칭 성공률" value={`${o.kpi.autoRate}%`} note={`${o.kpi.seated}명 배정 · ${o.kpi.failed}명 실패`} />
         <Kpi label="처리할 예외" value={`${o.kpi.open}건`} alert={o.kpi.open > 0} />
+      </section>
+      <section aria-label="확인할 사람" className="mt-3 grid grid-cols-3 gap-3">
+        <Kpi label="실패 후 선택 대기" value={`${o.kpi.choosing}명`} note="참가자가 직접 이동·보관·환불" />
+        <Kpi label="노쇼 후보" value={`${o.kpi.noShow}명`} note="신청자·결제·참석에서 확정" />
+        <Kpi label="미처리 신고" value={`${o.kpi.reports}건`} alert={o.kpi.reports > 0} />
       </section>
 
       <section className="mt-8">
@@ -86,6 +93,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                           <option value="restrict">4주 신청 제한</option>
                           <option value="ban">영구 이용 제한</option>
                         </select>
+                        <p className="w-full text-[13px] text-graphite">제한은 다음 신청부터 적용돼요. 이미 확정된 회차는 그대로 두고 필요하면 연락해요.</p>
                       </>
                     )}
                     <label htmlFor={`note-${e.id}`} className="sr-only">처리 메모</label>

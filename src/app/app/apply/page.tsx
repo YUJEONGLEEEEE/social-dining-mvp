@@ -5,6 +5,7 @@ import { REGION_LABEL } from "@/lib/profile-options";
 import { dateLabel, dateTimeLabel, timeLabel, won } from "@/lib/format";
 import { PASS_PLANS, keptPass } from "@/lib/participant/apply";
 import { ApplyForm } from "./apply-form";
+import { STAGE_CLOCK } from "@/lib/demo/clock";
 
 const PAYMENT_LABEL: Record<string, string> = {
   pending: "결제 대기", paid: "결제 완료", refund_requested: "환불 처리 중", refunded: "환불 완료", pass_kept: "이용권으로 보관", failed: "결제 실패",
@@ -28,16 +29,19 @@ export default async function Apply() {
   const chosen = new Set(journey.slots.map((s) => s.id));
   const open = (slots ?? []).filter((s) => session.demoClock && s.match_deadline_at > new Date(session.demoClock).toISOString());
 
-  // The form opens while there is an open week this person has not applied to yet.
-  const { data: active } = open.length
-    ? await createAdminClient().from("applications").select("id").eq("sandbox_id", session.sandboxId).eq("profile_id", session.profileId)
-      .in("week_of", [...new Set(open.map((s) => s.event_date))]).not("application_status", "in", "(cancelled,moved)").limit(1)
-    : { data: [] };
-  if (open.length && !active?.length) {
+  // The form opens only when this person has nothing upcoming: no application in an open week,
+  // and no waiting or confirmed table whose dinner is still ahead.
+  const { data: mine } = await createAdminClient().from("applications").select("week_of, match_status, application_status")
+    .eq("sandbox_id", session.sandboxId).eq("profile_id", session.profileId).not("application_status", "in", "(cancelled,moved)");
+  const openWeeks = new Set(open.map((s) => s.event_date));
+  const clock = new Date(session.demoClock ?? STAGE_CLOCK.applied);
+  const busy = (mine ?? []).some((a) => openWeeks.has(a.week_of)
+    || (["waiting", "matching", "reassigning", "confirmed"].includes(a.match_status) && new Date(`${a.week_of}T21:00:00+09:00`) > clock));
+  if (open.length && !busy) {
     const kept = await keptPass(session.sandboxId, session.profileId, session.demoClock);
     return (
       <main className="px-5 pb-10 pt-6">
-        <h1 className="text-[24px] font-extrabold tracking-[-0.03em]">이번 주 식탁 신청</h1>
+        <h1 className="text-[24px] font-extrabold tracking-[-0.03em]">{dateLabel(open[0].starts_at).replace(/ \(.\)/, "")} 식탁 신청</h1>
         <p className="mt-1 text-[15px] text-graphite">날짜·지역과 이용권을 고르고 결제하면 신청이 끝나요. 매칭 마감에 자동으로 식탁이 정해져요.</p>
         <ApplyForm
           slots={open.map((s) => ({ id: s.id, title: `${dateLabel(s.starts_at)} ${timeLabel(s.starts_at)} · ${REGION_LABEL[s.region]}`, deadline: dateTimeLabel(s.match_deadline_at) }))}
@@ -51,11 +55,12 @@ export default async function Apply() {
   return (
     <main className="px-5 pt-6">
       <h1 className="text-[24px] font-extrabold tracking-[-0.03em]">신청</h1>
-      <p className="mt-1 text-[15px] text-graphite">날짜와 지역을 여러 개 고르면, 첫 번째에서 안 맞을 때 다른 후보로 자동 재배치해요.</p>
+      <p className="mt-1 text-[15px] text-graphite">같은 날 다른 지역도 괜찮다고 고르면, 첫 지역에서 안 맞을 때 다른 지역으로 자동 재배치해요.</p>
 
       <h2 className="mt-6 text-[15px] font-bold">모집 중인 회차</h2>
+      {open.length === 0 && <p className="mt-2 rounded-btn bg-mist p-4 text-[15px] text-graphite">지금 신청을 받는 회차가 없어요.</p>}
       <ul className="mt-2 space-y-2">
-        {slots?.map((s) => (
+        {open.map((s) => (
           <li key={s.id} className={`rounded-btn p-4 text-[15px] ${chosen.has(s.id) ? "bg-pollen" : "bg-mist"}`}>
             <div className="flex items-center justify-between">
               <span className="font-bold">{dateLabel(s.starts_at)} {timeLabel(s.starts_at)} · {REGION_LABEL[s.region]}</span>
@@ -70,7 +75,7 @@ export default async function Apply() {
         <section className="mt-6 rounded-card bg-mist p-5 text-[15px]">
           <h2 className="font-bold">내 신청</h2>
           <dl className="mt-2 space-y-1.5">
-            <div className="flex justify-between"><dt className="text-graphite">이용권</dt><dd>{PASS_PLANS[journey.pass?.kind as keyof typeof PASS_PLANS]?.name ?? "1회권"} · {won(journey.pass?.price ?? 9900)}</dd></div>
+            <div className="flex justify-between"><dt className="text-graphite">이용권</dt><dd>{journey.pass ? `${PASS_PLANS[journey.pass.kind as keyof typeof PASS_PLANS]?.name} · ${won(journey.pass.price)}` : "데모 자동 신청 (결제 없음)"}</dd></div>
             <div className="flex justify-between"><dt className="text-graphite">결제 상태</dt><dd className="font-bold">{PAYMENT_LABEL[journey.application.payment_status]}</dd></div>
             <div className="flex justify-between"><dt className="text-graphite">결제 방식</dt><dd>모의 결제 (해커톤 허용 범위)</dd></div>
           </dl>

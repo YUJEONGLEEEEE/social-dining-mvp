@@ -218,7 +218,8 @@ export async function compareFeedbackEffect(sandboxId: string, weekOf: string, p
   const build = (withFeedback: boolean): Relations => {
     const r: Relations = { forbidden: new Set(), met: new Set(), mutualAgain: new Set() };
     for (const x of rels ?? []) {
-      if (!withFeedback && x.source === "feedback") continue;
+      // Reports are made in the feedback form too, so "before" leaves them out as well.
+      if (!withFeedback && (x.source === "feedback" || x.source === "report")) continue;
       const key = pairKey(x.profile_id, x.other_profile_id);
       if (x.kind === "blocked" || x.kind === "disliked") r.forbidden.add(key);
       else if (x.kind === "met") r.met.add(key);
@@ -260,4 +261,16 @@ export async function compareFeedbackEffect(sandboxId: string, weekOf: string, p
     before: { ...before, members: before.members.map((m) => ({ name: m.name, relation: label(m.profileId) })) },
     after: { ...after, members: after.members.map((m) => ({ name: m.name, relation: label(m.profileId) })) },
   };
+}
+
+/** Whether this person left feedback for the given week. */
+export async function hasFeedback(sandboxId: string, profileId: string, weekOf: string) {
+  const { data } = await createAdminClient()
+    .from("feedbacks")
+    .select("id, applications!inner(profile_id, week_of)")
+    .eq("sandbox_id", sandboxId)
+    .eq("applications.profile_id", profileId)
+    .eq("applications.week_of", weekOf)
+    .limit(1);
+  return !!data?.length;
 }

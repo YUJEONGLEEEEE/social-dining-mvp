@@ -1,6 +1,7 @@
 import { requireDemoSession } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { currentWeek } from "@/lib/admin/overview";
+import { currentWeek, weeksSoFar } from "@/lib/admin/overview";
+import { WeekTabs } from "../week-tabs";
 import { REGION_LABEL } from "@/lib/profile-options";
 import { dateLabel } from "@/lib/format";
 
@@ -8,9 +9,10 @@ const RESOLUTION: Record<string, string> = {
   moved_slot: "다른 일정으로 이동", kept_pass: "이용권 보관", refunded: "환불", membership_extended: "멤버십 7일 연장", waitlist_filled: "대기자 충원",
 };
 
-export default async function MatchingMonitor() {
+export default async function MatchingMonitor({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
+  const { week } = await searchParams;
   const session = await requireDemoSession();
-  const weekOf = currentWeek(session);
+  const weekOf = currentWeek(session, week);
   const db = createAdminClient();
   const { data: run } = await db.from("match_runs").select("summary, rules_snapshot").eq("sandbox_id", session.sandboxId).eq("idempotency_key", `week:${weekOf}`).maybeSingle();
   const { data: tables } = await db
@@ -30,6 +32,7 @@ export default async function MatchingMonitor() {
 
   return (
     <main>
+      <WeekTabs weeks={weeksSoFar(session)} current={weekOf} path="/admin/matching" />
       <h1 className="text-[22px] font-extrabold tracking-[-0.03em]">자동 매칭 모니터 · {dateLabel(`${weekOf}T10:00:00Z`)}</h1>
       {!summary ? (
         <p className="mt-4 rounded-btn bg-mist p-4 text-[15px]">아직 이 회차의 매칭이 실행되지 않았어요.</p>
@@ -37,7 +40,7 @@ export default async function MatchingMonitor() {
         <>
           <p className="mt-2 text-[15px] leading-relaxed">
             필수 조건(4~6명, 나이 차 {rules?.maxAgeGap ?? 8}살 이내, 차단·비선호 없음)을 지킨 테이블 중 점수 {rules?.minScore ?? 60}점 이상만 자동 확정했어요.
-            테이블 {summary.tables}개 · {summary.seated}명 배정 · 다른 일정으로 재배치 {summary.moved}명 · 실패 {summary.failed}명.
+            테이블 {summary.tables}개 · {summary.seated}명 배정 · 희망한 다른 지역으로 재배치 {summary.moved}명 · 실패 {summary.failed}명.
           </p>
           <ul className="mt-5 grid gap-3 md:grid-cols-2">
             {(tables ?? []).map((t) => {
