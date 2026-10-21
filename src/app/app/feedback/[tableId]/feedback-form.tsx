@@ -11,13 +11,28 @@ const CHOICES = [
   { value: "never", label: "다시 안 만날래요" },
 ];
 
+const ASPECTS = [
+  { name: "mood", label: "분위기" },
+  { name: "talk", label: "대화" },
+  { name: "venue", label: "식당" },
+];
+const INTENTS = [
+  { name: "rejoin", label: "다음에도 참여할래요?" },
+  { name: "recommend", label: "친구에게 추천할래요?" },
+];
+const INTENT_CHOICES = [
+  { value: "yes", label: "네" },
+  { value: "maybe", label: "고민 중" },
+  { value: "no", label: "아니요" },
+];
+
 export function FeedbackForm({ tableId, people }: { tableId: string; people: { id: string; name: string }[] }) {
   const [state, action, pending] = useActionState<FeedbackState, FormData>(submitFeedbackAction, {});
   return (
     <form action={action} className="mt-5 space-y-6">
       <input type="hidden" name="tableId" value={tableId} />
       <fieldset>
-        <legend className="mb-2 text-[15px] font-bold">만족도</legend>
+        <legend className="mb-2 text-[15px] font-bold">전체 만족도</legend>
         <div className="flex flex-row-reverse justify-end gap-1">
           {[5, 4, 3, 2, 1].map((n) => (
             <label key={n} className="cursor-pointer">
@@ -30,6 +45,39 @@ export function FeedbackForm({ tableId, people }: { tableId: string; people: { i
         </div>
       </fieldset>
       <style>{`fieldset div:has(input[name=rating]) label:has(:checked) ~ label svg { color: var(--ink); }`}</style>
+
+      <fieldset>
+        <legend className="mb-2 text-[15px] font-bold">항목별 점수</legend>
+        <div className="space-y-2.5">
+          {ASPECTS.map((a) => (
+            <div key={a.name} className="flex items-center justify-between gap-2">
+              <span className="text-[15px]">{a.label}</span>
+              <span className="flex gap-1" role="radiogroup" aria-label={a.label}>
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <label key={n} className="cursor-pointer">
+                    <input type="radio" name={a.name} value={n} required className="peer sr-only" />
+                    <span className="grid size-9 place-items-center rounded-full bg-mist text-[14px] peer-checked:bg-honey peer-checked:font-bold peer-focus-visible:outline-2">{n}</span>
+                  </label>
+                ))}
+              </span>
+            </div>
+          ))}
+        </div>
+      </fieldset>
+
+      {INTENTS.map((q) => (
+        <fieldset key={q.name}>
+          <legend className="mb-2 text-[15px] font-bold">{q.label}</legend>
+          <div className="flex gap-2">
+            {INTENT_CHOICES.map((c) => (
+              <label key={c.value} className="cursor-pointer">
+                <input type="radio" name={q.name} value={c.value} required className="peer sr-only" />
+                <span className="inline-flex h-10 items-center rounded-full bg-mist px-4 text-[15px] peer-checked:bg-honey peer-checked:font-bold peer-focus-visible:outline-2">{c.label}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      ))}
 
       <fieldset>
         <legend className="mb-1 text-[15px] font-bold">다시 만나고 싶은 사람</legend>

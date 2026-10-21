@@ -77,6 +77,17 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                 ) : (
                   <form action={closeExceptionAction} className="mt-3 flex flex-wrap gap-2 pl-[34px]">
                     <input type="hidden" name="exceptionId" value={e.id} />
+                    {e.type === "safety_report" && (
+                      <>
+                        <label htmlFor={`sanction-${e.id}`} className="sr-only">신고 대상 조치</label>
+                        <select id={`sanction-${e.id}`} name="sanction" defaultValue="warn" className="h-10 rounded-sm border-[1.5px] border-line bg-paper px-3 text-[14px]">
+                          <option value="none">조치 없음</option>
+                          <option value="warn">경고</option>
+                          <option value="restrict">4주 신청 제한</option>
+                          <option value="ban">영구 이용 제한</option>
+                        </select>
+                      </>
+                    )}
                     <label htmlFor={`note-${e.id}`} className="sr-only">처리 메모</label>
                     <input id={`note-${e.id}`} name="note" maxLength={300} placeholder="처리 메모 (선택)" className="h-10 min-w-0 flex-1 rounded-sm border-[1.5px] border-line bg-paper px-3 text-[14px]" />
                     <button className="h-10 rounded-sm bg-ink px-4 text-[14px] font-bold text-paper">확인 완료</button>
@@ -95,6 +106,20 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
           </details>
         )}
       </section>
+
+      {o.feedback.count > 0 && (
+        <section className="mt-8">
+          <h2 className="text-[17px] font-bold">피드백 요약 · 누적 {o.feedback.count}명 응답</h2>
+          <div className="mt-3 grid grid-cols-3 gap-3 md:grid-cols-6">
+            <Kpi label="전체 만족도" value={`${o.feedback.rating ?? "-"}`} />
+            <Kpi label="분위기" value={`${o.feedback.mood ?? "-"}`} />
+            <Kpi label="대화" value={`${o.feedback.talk ?? "-"}`} />
+            <Kpi label="식당" value={`${o.feedback.venue ?? "-"}`} />
+            <Kpi label="재참여 의향" value={o.feedback.rejoin === null ? "-" : `${o.feedback.rejoin}%`} />
+            <Kpi label="추천 의향" value={o.feedback.recommend === null ? "-" : `${o.feedback.recommend}%`} />
+          </div>
+        </section>
+      )}
 
       <section className="mt-8">
         <h2 className="text-[17px] font-bold">테이블</h2>

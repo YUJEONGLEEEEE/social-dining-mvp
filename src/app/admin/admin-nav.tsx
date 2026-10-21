@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const ITEMS = [
   { href: "/admin", label: "대시보드·예외 처리함" },
   { href: "/admin/matching", label: "자동 매칭 모니터" },
+  { href: "/admin/participants", label: "신청자·결제·참석" },
   { href: "/admin/rules", label: "매칭 규칙·가중치" },
   { href: "/admin/logs", label: "자동 처리 기록" },
 ];

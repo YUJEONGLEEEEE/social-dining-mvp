@@ -2,10 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireDemoSession } from "@/lib/auth/session";
 import { getMyTable } from "@/lib/participant/table";
-import { REGION_LABEL } from "@/lib/profile-options";
+import { BUDGETS, REGION_LABEL } from "@/lib/profile-options";
 import { dateTimeLabel } from "@/lib/format";
 import { Icon } from "@/components/icons";
-import { confirmAttendance, sendChatMessage } from "../../../actions";
+import { checkInAction, confirmAttendance, sendChatMessage } from "../../../actions";
 
 export default async function TableRoom({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -26,6 +26,24 @@ export default async function TableRoom({ params }: { params: Promise<{ id: stri
           <p className="text-[13px] text-graphite">{members.length}명 · {table.venues?.name ?? "식당 확정 중"} · {REGION_LABEL[table.event_slots.region]}</p>
         </div>
       </header>
+
+      {table.venues && (
+        <section aria-label="식당 정보" className="mx-4 mb-2 rounded-btn bg-pollen px-4 py-3 text-[15px] leading-relaxed">
+          <p className="font-bold">{table.venues.name}{table.venues.rating ? ` · 평점 ${table.venues.rating}` : ""}</p>
+          <p>{dateTimeLabel(table.event_slots.starts_at)} · 예약명 &ldquo;우연한 식탁&rdquo;</p>
+          <p className="text-[14px] text-charcoal">
+            {table.venues.address ?? REGION_LABEL[table.event_slots.region]}
+            {table.venues.price_band ? ` · 1인 ${BUDGETS.find((b) => b.value === table.venues!.price_band)?.label ?? ""} (현장 결제)` : ""}
+          </p>
+          <a
+            href={`https://map.naver.com/p/search/${encodeURIComponent(`${table.venues.name} ${REGION_LABEL[table.event_slots.region]}`)}`}
+            target="_blank" rel="noopener noreferrer"
+            className="mt-1 inline-flex items-center gap-1 text-[14px] font-semibold underline underline-offset-4"
+          >
+            <Icon name="pin" size={16} />지도에서 보기
+          </a>
+        </section>
+      )}
 
       <details className="mx-4 mb-3 rounded-btn bg-mist px-4 py-3 text-[15px]">
         <summary className="cursor-pointer font-bold">함께하는 사람 {members.length}명</summary>
@@ -75,6 +93,13 @@ export default async function TableRoom({ params }: { params: Promise<{ id: stri
         </form>
       )}
       {attendance === "confirmed" && <p className="px-4 pt-3 text-[15px] font-bold">참석 확인 완료 · 내일 만나요</p>}
+      {session.stage === "dining" && attendance !== "checked_in" && (
+        <form action={checkInAction} className="px-4 pt-3">
+          <input type="hidden" name="tableId" value={table.id} />
+          <button className="h-[52px] w-full rounded-btn bg-ink font-semibold text-paper">도착했어요 · 체크인</button>
+          <p className="mt-1.5 text-center text-[13px] text-graphite">체크인 기록이 없으면 운영자 화면에 노쇼 후보로 표시돼요</p>
+        </form>
+      )}
       {attendance === "checked_in" && <p className="px-4 pt-3 text-[15px] font-bold">체크인 완료 · 즐거운 식사 되세요</p>}
 
       <form action={sendChatMessage} className="flex items-center gap-2 px-3.5 py-3">

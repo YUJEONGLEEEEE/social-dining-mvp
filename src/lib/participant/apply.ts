@@ -34,6 +34,12 @@ export async function submitApplication(
   if (!first) return { error: "신청할 수 있는 일정을 골라 주세요." };
   const slotIds = [first.id, ...(otherSlotsOk ? open!.filter((s) => s.event_date === first.event_date && s.id !== first.id).map((s) => s.id) : [])];
 
+  // SAF-02: no-shows and sanctions block new applications for a while.
+  const { data: person } = await db.from("profiles").select("restricted_until").eq("id", profileId).single();
+  if (person?.restricted_until && new Date(person.restricted_until) > new Date(demoClock)) {
+    return { error: `신청이 ${new Date(person.restricted_until).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" })}까지 제한돼 있어요.` };
+  }
+
   // One application per person per week, so a double submit cannot pay twice.
   const { data: existing } = await db
     .from("applications")

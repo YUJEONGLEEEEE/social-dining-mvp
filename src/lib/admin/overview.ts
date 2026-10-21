@@ -23,6 +23,9 @@ export async function getOverview(session: DemoSession, weekOf: string) {
     .eq("sandbox_id", sid)
     .order("created_at", { ascending: false });
   const { data: venues } = await db.from("venues").select("id, name, region, rating, tables_available").eq("sandbox_id", sid).order("region");
+  const { data: feedback } = await db.from("feedbacks")
+    .select("rating, rating_mood, rating_talk, rating_venue, would_rejoin, would_recommend, dining_tables!inner(event_slots!inner(event_date))")
+    .eq("sandbox_id", sid).lte("dining_tables.event_slots.event_date", weekOf);
   const { data: run } = await db.from("match_runs").select("status, summary, finished_at").eq("sandbox_id", sid).eq("idempotency_key", `week:${weekOf}`).maybeSingle();
 
   // Everyone who paid for this week, including those later refunded or moved.
@@ -47,6 +50,30 @@ export async function getOverview(session: DemoSession, weekOf: string) {
       table_members: { profile_id: string; left_at: string | null; profiles: { display_name: string; birth_year: number; gender: string } }[];
     }[],
     exceptions: exceptions ?? [],
+    feedback: summarizeFeedback(feedback ?? []),
     venues: venues ?? [],
+  };
+}
+
+type FeedbackRow = { rating: number; rating_mood: number | null; rating_talk: number | null; rating_venue: number | null; would_rejoin: string | null; would_recommend: string | null };
+
+/** Averages for the operator (11장 dashboard): overall, mood, talk, venue, and intent shares. */
+function summarizeFeedback(rows: FeedbackRow[]) {
+  const avg = (values: (number | null)[]) => {
+    const v = values.filter((x): x is number => x !== null);
+    return v.length ? Math.round((v.reduce((a, b) => a + b, 0) / v.length) * 10) / 10 : null;
+  };
+  const share = (values: (string | null)[]) => {
+    const v = values.filter(Boolean);
+    return v.length ? Math.round((v.filter((x) => x === "yes").length / v.length) * 100) : null;
+  };
+  return {
+    count: rows.length,
+    rating: avg(rows.map((r) => r.rating)),
+    mood: avg(rows.map((r) => r.rating_mood)),
+    talk: avg(rows.map((r) => r.rating_talk)),
+    venue: avg(rows.map((r) => r.rating_venue)),
+    rejoin: share(rows.map((r) => r.would_rejoin)),
+    recommend: share(rows.map((r) => r.would_recommend)),
   };
 }

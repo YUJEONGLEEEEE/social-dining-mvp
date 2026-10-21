@@ -53,13 +53,13 @@ type TableInfo = {
   venue_id: string | null;
   venues: { name: string; address: string | null } | null;
   event_slots: { region: string; starts_at: string; event_date: string };
-  table_members: { profile_id: string; left_at: string | null; profiles: { budget: string | null } }[];
+  table_members: { profile_id: string; left_at: string | null; profiles: { budget: string | null; interests: string[] } }[];
 };
 
 async function loadTables(db: Db, sandboxId: string, filter: { runId?: string; tableId?: string; weekOf?: string }) {
   let query = db
     .from("dining_tables")
-    .select("id, score, reason, venue_id, venues(name, address), event_slots!inner(region, starts_at, event_date), table_members(profile_id, left_at, profiles(budget))")
+    .select("id, score, reason, venue_id, venues(name, address), event_slots!inner(region, starts_at, event_date), table_members(profile_id, left_at, profiles(budget, interests))")
     .eq("sandbox_id", sandboxId)
     .eq("status", "confirmed");
   if (filter.runId) query = query.eq("match_run_id", filter.runId);
@@ -239,7 +239,15 @@ export async function sendReminders(sandboxId: string, weekOf: string) {
   return { sent };
 }
 
-/** During the meal: one conversation card per stage, the same cards for every table. */
+/** The interest most of the table shares, for a card made for this table (CON-02). */
+function sharedInterest(table: TableInfo) {
+  const counts = new Map<string, number>();
+  for (const m of table.table_members) for (const i of m.profiles.interests ?? []) counts.set(i, (counts.get(i) ?? 0) + 1);
+  const [top] = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  return top && top[1] >= 2 ? { label: top[0].replace(/\s*\(.*\)$/, ""), count: top[1] } : null;
+}
+
+/** During the meal: one conversation card per stage; the opening card is about what this table shares. */
 export async function postConversationCards(sandboxId: string, weekOf: string) {
   const db = createAdminClient();
   const tables = await loadTables(db, sandboxId, { weekOf });
@@ -250,10 +258,12 @@ export async function postConversationCards(sandboxId: string, weekOf: string) {
   };
   let posted = 0;
   for (const [index, t] of tables.entries()) {
+    const shared = sharedInterest(t);
+    const opening = shared ? `${shared.count}명이 '${shared.label}'에 관심 있어요. 요즘 가장 좋았던 경험을 하나씩 나눠 볼까요?` : pick("opening", index);
     const rows = (["opening", "middle", "closing"] as const).map((stage, i) => ({
       table_id: t.id,
       kind: "topic_card" as const,
-      body: `${["식사 초반", "식사 중반", "식사 후반"][i]} 대화 카드 ${i + 1}/3 · ${pick(stage, index)}`,
+      body: `${["식사 초반", "식사 중반", "식사 후반"][i]} 대화 카드 ${i + 1}/3 · ${stage === "opening" ? opening : pick(stage, index)}`,
       dedupe_key: `table:${t.id}:card:${stage}`,
     })).filter((r) => r.body);
     posted += await postChat(db, sandboxId, rows);
