@@ -5,6 +5,7 @@ import { getJourney } from "@/lib/participant/journey";
 import { compareFeedbackEffect } from "@/lib/feedback/loop";
 import { REGION_LABEL } from "@/lib/profile-options";
 import { dateLabel, dateTimeLabel, durationLabel, timeLabel } from "@/lib/format";
+import { PASS_PLANS } from "@/lib/participant/apply";
 import { Badge } from "@/components/ui";
 import { Icon } from "@/components/icons";
 
@@ -36,7 +37,13 @@ export default async function AppHome() {
       </header>
 
       {!application && (
-        <Hello name={name} line="아직 신청한 식탁이 없어요" title={"목요일 저녁,\n처음 보는 사람들과"} />
+        <>
+          <Hello name={name} line="아직 신청한 식탁이 없어요" title={"목요일 저녁,\n처음 보는 사람들과"} />
+          <section className="rounded-card bg-mist p-5">
+            <p className="text-[15px] leading-relaxed">날짜·지역과 이용권을 고르고 결제하면, 화요일 24시 매칭 마감에 4~6명 식탁이 자동으로 정해져요.</p>
+            <Link href="/app/apply" className="mt-4 flex h-[52px] items-center justify-center rounded-btn bg-ink font-semibold text-paper">이번 주 식탁 신청하기</Link>
+          </section>
+        </>
       )}
 
       {application && status === "waiting" && slot && (
@@ -53,7 +60,7 @@ export default async function AppHome() {
             <dl className="mt-4 space-y-1.5 text-[15px]">
               <Row label="일정" value={`${dateLabel(slot.starts_at)} ${timeLabel(slot.starts_at)}`} />
               <Row label="지역" value={slots.map((s) => REGION_LABEL[s.region]).join(" → ") + (slots.length > 1 ? " (재배치 후보 포함)" : "")} />
-              <Row label="결제" value={application.payment_status === "paid" ? "1회권 결제 완료" : "결제 대기"} />
+              <Row label="결제" value={application.payment_status === "paid" ? `${PASS_PLANS[journey.pass?.kind as keyof typeof PASS_PLANS]?.name ?? "1회권"} 결제 완료` : "결제 대기"} />
             </dl>
           </section>
         </>

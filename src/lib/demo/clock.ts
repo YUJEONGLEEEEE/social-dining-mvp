@@ -32,8 +32,13 @@ export const STAGE_CLOCK: Record<Stage, string> = {
 /** Runs the automation for the next stage. Steps are idempotent, so a double click is harmless. */
 export async function advanceDemo(sandboxId: string, ownerUserId: string, from: Stage, actor: string) {
   const db = createAdminClient();
-  const { data: sandbox } = await db.from("sandboxes").select("demo_stage").eq("id", sandboxId).eq("owner_user_id", ownerUserId).single();
+  const { data: sandbox } = await db.from("sandboxes").select("demo_stage, me_profile_id").eq("id", sandboxId).eq("owner_user_id", ownerUserId).single();
   if (!sandbox || sandbox.demo_stage !== from) return; // stale button: someone already advanced
+  if (from === "applied") {
+    // The visitor applies on their own first; matching without them would skip the scenario.
+    const { count } = await db.from("applications").select("id", { count: "exact", head: true }).eq("sandbox_id", sandboxId).eq("profile_id", sandbox.me_profile_id);
+    if (!count) return;
+  }
 
   const index = STAGES.indexOf(from);
   const to = STAGES[index + 1];

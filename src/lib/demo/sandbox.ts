@@ -112,11 +112,13 @@ export async function createDemoSandbox(ownerUserId: string, me: { displayName: 
   }
 
   // Passes, paid applications and slot choices. A few people also accept Gangnam.
-  const passes = profiles.map((p) => ({
+  // The visitor is left out: they apply and pay on the 신청 screen themselves.
+  const applicants = profiles.filter((p) => p.id !== meId);
+  const passes = applicants.map((p) => ({
     id: crypto.randomUUID(), sandbox_id: sid, profile_id: p.id, kind: "single", price: SINGLE_PRICE, remaining_count: 0,
   }));
   await check(db.from("passes").insert(passes));
-  const applications = profiles.map((p, i) => ({
+  const applications = applicants.map((p, i) => ({
     id: crypto.randomUUID(), sandbox_id: sid, profile_id: p.id, pass_id: passes[i].id, week_of: DEMO_WEEK,
     payment_status: "paid", created_at: kst("2026-10-15", 12),
   }));
